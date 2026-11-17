@@ -1,0 +1,31 @@
+{
+  "name": "location-analyzer",
+  "version": "0.1.0",
+  "private": true,
+  "description": "입지 변화·가격영향 분석기 — 분양가·담보가치·회수시점 검증",
+  "type": "module",
+  "engines": {
+    "node": ">=22.13 <23"
+  },
+  "scripts": {
+    "build": "node --import tsx scripts/build.ts",
+    "start": "node --import tsx server/main.ts",
+    "dev": "npm run build && npm run start",
+    "harness": "node --import tsx examples/launcher-harness/server.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --import tsx --test tests/unit/*.test.ts tests/integration/*.test.ts",
+    "test:e2e": "npm run build && node --import tsx --test tests/e2e/*.test.ts",
+    "test:all": "npm run typecheck && npm test && npm run test:e2e"
+  },
+  "dependencies": {
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "tsx": "4.23.12"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.3",
+    "esbuild": "0.28.2",
+    "playwright": "1.63.0",
+    "typescript": "6.0.3"
+  }
+}

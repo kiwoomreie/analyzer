@@ -1,0 +1,49 @@
+import { useState } from "react";
+import { download, Section, Select, Text } from "../components.tsx";
+import type { SectionProps } from "../AnalysisView.tsx";
+import { diffWorking, reportChanges, reportDraft, reportQuestions, reportSummary, toPlainText } from "../../shared/report.ts";
+import { seoulNowIso, seoulToday } from "../../shared/dates.ts";
+import type { WorkingInputs } from "../../shared/model.ts";
+
+type Kind = "summary" | "questions" | "draft" | "changes";
+const KINDS: [Kind, string][] = [["summary", "1페이지 검토 요약 + 근거 부록"], ["questions", "영업부서·시행사 확인 질문 초안"], ["draft", "보고서 초안(~임. 문체)"], ["changes", "분석 버전·사본 간 변경표"]];
+
+export function ReportSection({ rec, setRec }: SectionProps) {
+  const r = rec.runs[rec.runs.length - 1].result;
+  const [kind, setKind] = useState<Kind>("summary");
+  const [note, setNote] = useState<string | undefined>();
+  const choices: [string, string][] = [["original", "최초 사본"], ["current", "현재 작업본"], ...rec.versions.map((v) => [`v${v.versionNo}`, `v${v.versionNo} ${v.note || ""}`] as [string, string])];
+  const [left, setLeft] = useState("original");
+  const [right, setRight] = useState("current");
+  const pick = (id: string): WorkingInputs => (id === "original" ? rec.original.working : id === "current" ? rec.working : rec.versions.find((v) => `v${v.versionNo}` === id)!.working);
+  const label = (id: string) => choices.find((c) => c[0] === id)?.[1] ?? id;
+
+  const md = kind === "summary" ? reportSummary(rec, r) : kind === "questions" ? reportQuestions(rec, r) : kind === "draft" ? reportDraft(rec, r) : reportChanges(rec, r, { leftLabel: label(left), left: pick(left), rightLabel: label(right), right: pick(right) });
+  const base = `${rec.title.replace(/[^\p{L}\p{N}_-]+/gu, "_").slice(0, 40)}_${kind}_${seoulToday()}`;
+  const diffs = diffWorking(pick(left), pick(right));
+
+  return (
+    <Section id="sec-report" title="⑥ 보고서·변경 이력" summary={`분석 실행 ${rec.runs.length}회 · 저장 버전 ${rec.versions.length}개`}>
+      <div className="toolbar">
+        <Select label="출력물" value={kind} options={KINDS} onChange={setKind} testId="report-kind" />
+        <button onClick={() => download(`${base}.md`, md)} data-testid="dl-md">Markdown 내려받기</button>
+        <button onClick={() => download(`${base}.txt`, toPlainText(md), "text/plain;charset=utf-8")}>텍스트 내려받기</button>
+        <button onClick={() => window.print()}>인쇄 / PDF 저장</button>
+      </div>
+      <p className="muted small">보고서는 마지막 분석 실행 결과(#{rec.runs[rec.runs.length - 1].runNo})와 같은 계산 함수로 만듭니다. 누구에게도 자동 발송하지 않으며 협의체 결과 반환 형식이 없습니다. 외부 AI 호출 없음.</p>
+      {kind === "changes" && (
+        <div className="toolbar small">
+          <Select label="이전" value={left} options={choices} onChange={setLeft} />
+          <Select label="이후" value={right} options={choices} onChange={setRight} />
+          <span>{diffs.length}개 항목 다름</span>
+        </div>
+      )}
+      <div className="print-area"><pre className="report" data-testid="report-preview">{md}</pre></div>
+      <h4>작업본 버전 저장</h4>
+      <div className="toolbar">
+        <Text label="버전 메모" value={note} onChange={setNote} />
+        <button data-testid="save-version" onClick={() => { setRec({ ...rec, versions: [...rec.versions, { versionNo: rec.versions.length + 1, at: seoulNowIso(), note: note ?? "", working: structuredClone(rec.working) }] }); setNote(undefined); }}>현재 작업본을 버전으로 저장</button>
+      </div>
+    </Section>
+  );
+}
