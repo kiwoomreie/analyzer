@@ -1,0 +1,11 @@
+{
+  "documentType": "location-analysis-launch",
+  "schemaVersion": "1.0",
+  "launchId": "fixture-launch-0002",
+  "createdAt": "2026-10-31T10:00:00+09:00",
+  "asOf": "2026-10-31",
+  "property": {
+    "assetType": "apartment",
+    "address": "[가상] 누리시 가람동 200"
+  }
+}

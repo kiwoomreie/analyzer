@@ -1,17 +1,17 @@
-// 새 앱 내부 분석 모델. 시동·반출·직접 입력·데모·백업 복구가 모두 이 모델로 변환된다.
-import type {
-  AssetType, ContractDocument, ContractProperty, ContractSchedule, ContractScenario, DebtDefinition,
-  DateOrMonth, MoneyUnit, PriceBasis, PriceKind, SeniorStatus,
-} from "./contract.ts";
+// 아파트 입지·가격 분석기 내부 모델(아파트 전용).
+// 입력은 주소 1개로 시작하며 전용면적·검토가격·준공연도·분양/준공 예정일은 선택 입력이다.
+// PF 현금흐름·대출구조·LTV·엑싯·회수 판단 항목은 두지 않는다(협의체와 역할 분리).
+import type { ContractDocument, DateOrMonth, MoneyUnit, PriceBasis } from "./contract.ts";
 import { LAUNCH_DOCUMENT_TYPE } from "./contract.ts";
 import { hashOf } from "./hash.ts";
 import { seoulNowIso, seoulToday } from "./dates.ts";
 
 export const ANALYSIS_FORMAT = "location-analyzer-analysis" as const;
 export const ANALYSIS_FORMAT_VERSION = 1 as const;
-export const ENGINE_VERSION = "0.1.0";
+export const ENGINE_VERSION = "0.2.0";
+export const APP_NAME = "아파트 입지·가격 분석기";
 
-/** demo=가상, user=사용자 제공, official-api=공식 API 실제 자료, committee-copy=협의체가 보낸 가정 사본 */
+/** demo=가상, user=사용자 제공, official-api=공식 API 실제 자료, committee-copy=협의체가 보낸 가정 사본(수신 대기 중) */
 export type DataMode = "demo" | "user" | "official-api" | "committee-copy";
 
 export const DATA_MODE_LABEL: Record<DataMode, string> = {
@@ -21,31 +21,24 @@ export const DATA_MODE_LABEL: Record<DataMode, string> = {
   "committee-copy": "협의체 사본",
 };
 
-export interface PriceEntry {
-  key: string;
-  kind: PriceKind;
+/** 검토가격: 금액 단위와 가격 기준을 분리. 내부 계산은 원·전용㎡. */
+export interface ReviewPrice {
   amount: number;
   unit: MoneyUnit;
-  basis: PriceBasis;
+  /** household=세대당(비교 타입 1세대), perExclusiveM2, perExclusivePyeong. 사업 전체 가격은 비교에 쓰지 않음 */
+  basis: Exclude<PriceBasis, "project">;
   basisDate?: DateOrMonth;
+  /** 예: 제시 분양가, 감정가, 매각 희망가 등 사용자가 붙인 이름 */
+  label?: string;
   dataMode: DataMode;
 }
 
-export interface DebtEntry {
-  amount: number;
-  unit: MoneyUnit;
-  definition: DebtDefinition;
-  seniorStatus: SeniorStatus;
-  seniorAmount?: number;
-  basisDate?: DateOrMonth;
-  dataMode: DataMode;
-}
-
-export type EventCategory = "transport" | "employment" | "supply";
+export type EventCategory = "transport" | "amenity" | "development" | "supply";
 export const EVENT_CATEGORY_LABEL: Record<EventCategory, string> = {
-  transport: "교통 변화",
-  employment: "대형 업무·고용시설",
-  supply: "경쟁 주택 공급",
+  transport: "교통",
+  amenity: "생활편의",
+  development: "개발사업",
+  supply: "주변 입주 물량",
 };
 
 export type MilestoneType =
@@ -56,7 +49,7 @@ export const MILESTONE_LABEL: Record<MilestoneType, string> = {
   approval: "승인",
   permit: "인허가",
   constructionStart: "착공",
-  opening: "개통·개장",
+  opening: "개통·개장·준공",
   delay: "지연(변경 일정)",
   cancellation: "취소",
   sale: "분양",
@@ -67,9 +60,8 @@ export const MILESTONE_LABEL: Record<MilestoneType, string> = {
 export interface Milestone {
   key: string;
   type: MilestoneType;
-  /** planned=예정, actual=실제 발생 */
   status: "planned" | "actual";
-  /** 적용·실행(예정)일 — 지연 항목은 변경된 개통 예정일 */
+  /** 적용·실행(예정)일. 지연 항목은 변경된 예정일 */
   date?: DateOrMonth;
   /** 발표일(그 정보가 알려진 날) */
   announcedOn?: DateOrMonth;
@@ -93,11 +85,8 @@ export interface SupplyDetail {
   households?: number;
   areaMinM2?: number;
   areaMaxM2?: number;
-  priceMinPerM2Krw?: number;
-  priceMaxPerM2Krw?: number;
   saleDate?: DateOrMonth;
   occupancyDate?: DateOrMonth;
-  demandGroups?: string[];
 }
 
 export interface LocationEvent {
@@ -105,7 +94,7 @@ export interface LocationEvent {
   category: EventCategory;
   name: string;
   direction: "favorable" | "adverse" | "mixed" | "unknown";
-  location?: { lat: number; lng: number; label?: string };
+  location?: { lat: number; lng: number };
   milestones: Milestone[];
   access?: { routeWalkMinutes?: number; routeSource?: string; routeCheckedOn?: string };
   supply?: SupplyDetail;
@@ -126,7 +115,6 @@ export interface Evidence {
   key: string;
   publisher: string;
   title: string;
-  /** 원문 식별자(문서번호 등) */
   sourceRef?: string;
   /** 참고 주소 — 텍스트로만 보관하며 앱이 조회·실행하지 않음 */
   sourceUrl?: string;
@@ -144,6 +132,8 @@ export interface Evidence {
 export interface Transaction {
   key: string;
   complexName: string;
+  /** 법정동(단지 구분 보조) */
+  dong?: string;
   exclusiveAreaM2: number;
   floor?: number;
   priceKrw: number;
@@ -151,24 +141,25 @@ export interface Transaction {
   contractDate: string;
   cancelled: boolean;
   cancelDate?: string;
-  /** target=본건 권역, comparator=비교 권역 */
-  group: "target" | "comparator";
   buildYear?: number;
   dataMode: DataMode;
+  /** 자료 출처 설명(예: 국토교통부 실거래가 API 2026-11-17 조회, 사용자 CSV 파일명) */
+  source?: string;
   manualExclusion?: string;
 }
 
-export interface IndexComparisonInput {
-  key: string;
-  label: string;
-  periodStart?: string;
-  periodEnd?: string;
-  targetStart: number;
-  targetEnd: number;
-  comparatorStart: number;
-  comparatorEnd: number;
-  source: string;
-  dataMode: DataMode;
+/** 단지별 보완 정보(거리·준공연도·좌표 등). 거래 자료에 없는 정보를 사용자가 확인해 입력 */
+export interface ComplexInfo {
+  /** complexKey = 단지명|법정동 */
+  complexKey: string;
+  distanceM?: number;
+  distanceSource?: string;
+  buildYear?: number;
+  households?: number;
+  location?: { lat: number; lng: number };
+  /** 사용자가 비교단지에서 제외/포함 지정 */
+  userDecision?: "exclude" | "include";
+  userReason?: string;
 }
 
 export interface AttachmentMeta {
@@ -177,46 +168,56 @@ export interface AttachmentMeta {
   mime: string;
   size: number;
   sha256: string;
-  /** 텍스트 형식 소용량 첨부만 보관(표시 시 그대로 텍스트로만 표시) */
   text?: string;
   addedAt: string;
 }
 
 export interface WorkingInputs {
   asOf: string;
-  property: ContractProperty & { targetDemand?: string[] };
-  prices: PriceEntry[];
-  debt: DebtEntry | null;
-  ltvChecks: {
-    valueKind: PriceKind;
-    collateralScopeConfirmed: boolean;
-    basisDateConfirmed: boolean;
+  property: {
+    address: string;
+    displayName?: string;
+    coordinates?: { lat: number; lng: number; source: string };
+    lawdCode?: string;
+    exclusiveAreaM2?: number;
+    /** 본건 준공(예정) 연도 — 비교단지 준공연도 차이 비교용 */
+    buildYear?: number;
+    householdCount?: number;
+    comparisonType?: string;
   };
-  schedule: ContractSchedule;
-  scenario: ContractScenario;
+  reviewPrice: ReviewPrice | null;
+  /** 입력한 경우에만 입지 변화 예정 시점과 비교 */
+  schedule: { saleStart?: DateOrMonth; completion?: DateOrMonth };
   options: {
     comparisonMonthsBefore: number;
     comparisonMonthsAfter: number;
-    purpose?: string;
+    /** 비교거래 최근 기간(가격 비교용) */
+    recentMonths: number;
     areaBandPct: number;
+    radiusM: number;
+    buildYearBand: number;
+    minComplexTrades: number;
     minSample: number;
     anchorEventKey?: string;
+    purpose?: string;
   };
   appraisalNote?: string;
   events: LocationEvent[];
   evidence: Evidence[];
   transactions: Transaction[];
-  indexComparisons: IndexComparisonInput[];
+  complexInfo: ComplexInfo[];
   attachments: AttachmentMeta[];
+  /** 자동 조회 기록(어떤 자료를 언제 어디서) */
+  dataLog: { at: string; source: string; detail: string }[];
 }
 
-export type OriginKind = "launch" | "committee-import" | "manual" | "demo" | "backup-restore";
+export type OriginKind = "manual" | "demo" | "backup-restore" | "launch" | "committee-import";
 export const ORIGIN_LABEL: Record<OriginKind, string> = {
-  launch: "협의체 ‘분석기 시동’",
-  "committee-import": "협의체 반출 파일",
   manual: "직접 입력",
   demo: "가상 데모",
   "backup-restore": "백업 복구",
+  launch: "협의체 ‘분석기 시동’(대기 기능)",
+  "committee-import": "협의체 반출 파일(대기 기능)",
 };
 
 export interface RunRecord {
@@ -246,18 +247,11 @@ export interface AnalysisRecord {
     launchId?: string;
     exportId?: string;
     sourceLabel?: string;
-    /** 협의체에서 사본을 만든 시각 */
     senderCreatedAt?: string;
-    /** 새 앱이 수신한 시각 */
     receivedAt?: string;
     payloadHash?: string;
   };
-  /** 최초 수신·생성 사본(수정 불가) */
-  original: {
-    document?: ContractDocument;
-    working: WorkingInputs;
-  };
-  /** 새 앱 내부 작업본 */
+  original: { document?: ContractDocument; working: WorkingInputs };
   working: WorkingInputs;
   runs: RunRecord[];
   versions: VersionRecord[];
@@ -271,50 +265,54 @@ export function newKey(prefix: string): string {
 }
 
 export function defaultOptions(): WorkingInputs["options"] {
-  return { comparisonMonthsBefore: 24, comparisonMonthsAfter: 24, areaBandPct: 10, minSample: 10 };
+  return { comparisonMonthsBefore: 24, comparisonMonthsAfter: 24, recentMonths: 12, areaBandPct: 15, radiusM: 1500, buildYearBand: 10, minComplexTrades: 3, minSample: 10 };
 }
 
-export function emptyWorking(asOf = seoulToday(), assetType: AssetType = "apartment"): WorkingInputs {
+export function emptyWorking(address: string, asOf = seoulToday()): WorkingInputs {
   return {
     asOf,
-    property: { assetType },
-    prices: [],
-    debt: null,
-    ltvChecks: { valueKind: "appraisalValue", collateralScopeConfirmed: false, basisDateConfirmed: false },
+    property: { address },
+    reviewPrice: null,
     schedule: {},
-    scenario: {},
     options: defaultOptions(),
     events: [],
     evidence: [],
     transactions: [],
-    indexComparisons: [],
+    complexInfo: [],
     attachments: [],
+    dataLog: [],
   };
 }
 
-/** 계약 문서(검증 완료)를 내부 작업 입력으로 변환. 시나리오 이름으로 숨은 규칙을 만들지 않고 전달된 숫자만 사용. */
+export const complexKeyOf = (t: { complexName: string; dong?: string }) => `${t.complexName.trim()}|${(t.dong ?? "").trim()}`;
+
+export function titleFor(w: WorkingInputs): string {
+  return w.property.displayName || w.property.address || "주소 미입력";
+}
+
+/**
+ * (수신 대기 기능) 계약 문서 → 작업 입력. 아파트 범위 밖 항목(채권·만기·처분·사업 전체 가격·시나리오)은 사용하지 않는다.
+ */
 export function workingFromContract(doc: ContractDocument): WorkingInputs {
-  const w = emptyWorking(doc.asOf, doc.property.assetType);
-  w.property = structuredClone(doc.property);
-  w.prices = (doc.selectedPrices?.prices ?? []).map((p, i) => ({ ...p, key: `price_${i + 1}`, dataMode: "committee-copy" as const }));
-  const d = doc.selectedPrices?.debt;
-  w.debt = d
-    ? { amount: d.amount, unit: d.unit, definition: d.definition, seniorStatus: d.seniorStatus, seniorAmount: d.seniorAmount, basisDate: d.basisDate, dataMode: "committee-copy" }
-    : null;
-  w.schedule = structuredClone(doc.schedule ?? {});
-  w.scenario = structuredClone(doc.scenario ?? {});
-  const o = doc.analysisOptions ?? {};
-  w.options = {
-    ...defaultOptions(),
-    ...(o.comparisonMonthsBefore ? { comparisonMonthsBefore: o.comparisonMonthsBefore } : {}),
-    ...(o.comparisonMonthsAfter ? { comparisonMonthsAfter: o.comparisonMonthsAfter } : {}),
-    ...(o.purpose ? { purpose: o.purpose } : {}),
+  const p = doc.property;
+  const w = emptyWorking(p.address ?? p.displayName ?? "", doc.asOf);
+  w.property = {
+    address: p.address ?? "",
+    displayName: p.displayName,
+    coordinates: p.coordinates ? { lat: p.coordinates.lat, lng: p.coordinates.lng, source: p.coordinates.senderVerified ? "협의체에서 확인한 좌표(새 앱 미검증)" : "협의체 전달 좌표(확인 표시 없음)" } : undefined,
+    lawdCode: p.lawdCode,
+    exclusiveAreaM2: p.exclusiveAreaM2,
+    householdCount: p.householdCount,
+    comparisonType: p.comparisonType,
   };
+  const pr = (doc.selectedPrices?.prices ?? []).find((x) => x.kind === "proposedSalePrice" && x.basis !== "project");
+  w.reviewPrice = pr ? { amount: pr.amount, unit: pr.unit, basis: pr.basis as ReviewPrice["basis"], basisDate: pr.basisDate, label: "제시 분양가", dataMode: "committee-copy" } : null;
+  w.schedule = { saleStart: doc.schedule?.saleStart, completion: doc.schedule?.completion };
+  const o = doc.analysisOptions ?? {};
+  if (o.comparisonMonthsBefore) w.options.comparisonMonthsBefore = o.comparisonMonthsBefore;
+  if (o.comparisonMonthsAfter) w.options.comparisonMonthsAfter = o.comparisonMonthsAfter;
+  if (o.purpose) w.options.purpose = o.purpose;
   return w;
-}
-
-export function titleFor(w: WorkingInputs, fallback: string): string {
-  return w.property.displayName || w.property.address || fallback;
 }
 
 export function recordFromContract(doc: ContractDocument, opts: { key: string; receivedAt?: string; kind: OriginKind }): AnalysisRecord {
@@ -322,41 +320,20 @@ export function recordFromContract(doc: ContractDocument, opts: { key: string; r
   const now = opts.receivedAt ?? seoulNowIso();
   const isLaunch = doc.documentType === LAUNCH_DOCUMENT_TYPE;
   return {
-    format: ANALYSIS_FORMAT,
-    formatVersion: ANALYSIS_FORMAT_VERSION,
-    key: opts.key,
-    title: titleFor(working, "표시명 미입력 사업장"),
-    createdAt: now,
-    updatedAt: now,
+    format: ANALYSIS_FORMAT, formatVersion: ANALYSIS_FORMAT_VERSION, key: opts.key, title: titleFor(working), createdAt: now, updatedAt: now,
     origin: {
-      kind: opts.kind,
-      launchId: isLaunch ? doc.launchId : undefined,
-      exportId: isLaunch ? undefined : doc.exportId,
-      sourceLabel: doc.sourceLabel,
-      senderCreatedAt: isLaunch ? doc.createdAt : doc.exportedAt,
-      receivedAt: now,
-      payloadHash: hashOf(doc),
+      kind: opts.kind, launchId: isLaunch ? doc.launchId : undefined, exportId: isLaunch ? undefined : doc.exportId, sourceLabel: doc.sourceLabel,
+      senderCreatedAt: isLaunch ? doc.createdAt : doc.exportedAt, receivedAt: now, payloadHash: hashOf(doc),
     },
     original: { document: structuredClone(doc), working: structuredClone(working) },
-    working,
-    runs: [],
-    versions: [],
+    working, runs: [], versions: [],
   };
 }
 
 export function newManualRecord(key: string, working: WorkingInputs, kind: OriginKind = "manual"): AnalysisRecord {
   const now = seoulNowIso();
   return {
-    format: ANALYSIS_FORMAT,
-    formatVersion: ANALYSIS_FORMAT_VERSION,
-    key,
-    title: titleFor(working, kind === "demo" ? "가상 데모" : "새 분석"),
-    createdAt: now,
-    updatedAt: now,
-    origin: { kind },
-    original: { working: structuredClone(working) },
-    working,
-    runs: [],
-    versions: [],
+    format: ANALYSIS_FORMAT, formatVersion: ANALYSIS_FORMAT_VERSION, key, title: titleFor(working), createdAt: now, updatedAt: now,
+    origin: { kind }, original: { working: structuredClone(working) }, working, runs: [], versions: [],
   };
 }

@@ -1,0 +1,163 @@
+{
+ "dataMode": "demo",
+ "events": [
+  {
+   "category": "transport",
+   "name": "[가상] 가람선 누리역 신설",
+   "direction": "favorable",
+   "location": {
+    "lat": 37.4105,
+    "lng": 127.129
+   },
+   "milestones": [
+    {
+     "type": "announcement",
+     "status": "actual",
+     "date": "2023-03-15",
+     "announcedOn": "2023-03-15",
+     "collectedOn": "2026-10-31"
+    },
+    {
+     "type": "notice",
+     "status": "actual",
+     "date": "2024-02-20",
+     "announcedOn": "2024-02-20",
+     "collectedOn": "2026-10-31"
+    },
+    {
+     "type": "opening",
+     "status": "planned",
+     "date": "2029-12",
+     "announcedOn": "2024-02-20",
+     "collectedOn": "2026-10-31",
+     "note": "[가상] 최초 개통 목표"
+    },
+    {
+     "type": "constructionStart",
+     "status": "actual",
+     "date": "2025-06",
+     "announcedOn": "2025-06-30",
+     "collectedOn": "2026-10-31"
+    },
+    {
+     "type": "delay",
+     "status": "planned",
+     "date": "2031-06",
+     "announcedOn": "2026-05-20",
+     "collectedOn": "2026-10-31",
+     "note": "[가상] 개통 목표 조정"
+    }
+   ]
+  },
+  {
+   "category": "amenity",
+   "name": "[가상] 누리 복합쇼핑몰",
+   "direction": "favorable",
+   "location": {
+    "lat": 37.4142,
+    "lng": 127.1235
+   },
+   "milestones": [
+    {
+     "type": "permit",
+     "status": "actual",
+     "date": "2025-09",
+     "announcedOn": "2025-09-12",
+     "collectedOn": "2026-10-31"
+    },
+    {
+     "type": "opening",
+     "status": "planned",
+     "date": "2028-03",
+     "announcedOn": "2025-09-12",
+     "collectedOn": "2026-10-31"
+    }
+   ]
+  },
+  {
+   "category": "development",
+   "name": "[가상] 누리 첨단업무지구",
+   "direction": "favorable",
+   "location": {
+    "lat": 37.4182,
+    "lng": 127.1405
+   },
+   "milestones": [
+    {
+     "type": "announcement",
+     "status": "actual",
+     "date": "2022-09-01",
+     "announcedOn": "2022-09-01",
+     "collectedOn": "2026-10-31"
+    },
+    {
+     "type": "approval",
+     "status": "actual",
+     "date": "2024-04-10",
+     "announcedOn": "2024-04-10",
+     "collectedOn": "2026-10-31"
+    },
+    {
+     "type": "opening",
+     "status": "planned",
+     "date": "2030-06",
+     "announcedOn": "2024-04-10",
+     "collectedOn": "2026-10-31",
+     "note": "[가상] 1단계 준공 목표"
+    }
+   ]
+  },
+  {
+   "category": "supply",
+   "name": "[가상] 하늘마을 3블록",
+   "direction": "adverse",
+   "location": {
+    "lat": 37.405,
+    "lng": 127.12
+   },
+   "milestones": [
+    {
+     "type": "sale",
+     "status": "actual",
+     "date": "2026-09",
+     "announcedOn": "2026-08-01",
+     "collectedOn": "2026-10-31"
+    }
+   ],
+   "supply": {
+    "stage": "sale",
+    "households": 1200,
+    "areaMinM2": 59,
+    "areaMaxM2": 99,
+    "saleDate": "2026-09",
+    "occupancyDate": "2029-03"
+   }
+  },
+  {
+   "category": "supply",
+   "name": "[가상] 강변 공공택지 B2",
+   "direction": "adverse",
+   "location": {
+    "lat": 37.399,
+    "lng": 127.135
+   },
+   "milestones": [
+    {
+     "type": "permit",
+     "status": "planned",
+     "date": "2027-06",
+     "announcedOn": "2026-03-01",
+     "collectedOn": "2026-10-31"
+    }
+   ],
+   "supply": {
+    "stage": "permit",
+    "households": 800,
+    "areaMinM2": 74,
+    "areaMaxM2": 114,
+    "saleDate": "2028-03"
+   }
+  }
+ ],
+ "evidence": []
+}

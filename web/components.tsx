@@ -86,7 +86,7 @@ export function Section(p: { id: string; title: string; summary?: string; childr
 }
 
 /** 월별 거래 건수(본건 권역·비교 권역) 막대. 단일 축, 2개 계열 + 범례, 마우스 올리면 값 표시. */
-export function MonthlyBars({ data }: { data: { month: string; target: number; comparator: number }[] }) {
+export function MonthlyBars({ data, single }: { data: { month: string; target: number; comparator: number }[]; single?: boolean }) {
   const [hover, setHover] = useState<number | null>(null);
   if (!data.length) return <p className="muted">표시할 기간 없음</p>;
   const W = 720, H = 180, padL = 32, padB = 22, padT = 8;
@@ -97,7 +97,7 @@ export function MonthlyBars({ data }: { data: { month: string; target: number; c
   const ticks = [0, Math.ceil(max / 2), max];
   return (
     <div className="chart">
-      <div className="legend"><span className="sw s1" /> 본건 권역 <span className="sw s2" /> 비교 권역 <span className="muted">· 포함된 비교거래 건수(월)</span></div>
+      {single ? <div className="legend muted">월별 거래 건수</div> : <div className="legend"><span className="sw s1" /> 본건 권역 <span className="sw s2" /> 비교 권역 <span className="muted">· 포함된 비교거래 건수(월)</span></div>}
       <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label="월별 포함 비교거래 건수">
         {ticks.map((t) => <g key={t}><line x1={padL} x2={W - 4} y1={y(t)} y2={y(t)} className="grid" /><text x={padL - 4} y={y(t) + 3} className="tick" textAnchor="end">{t}</text></g>)}
         {data.map((d, i) => {
@@ -105,14 +105,14 @@ export function MonthlyBars({ data }: { data: { month: string; target: number; c
           return (
             <g key={d.month} onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(null)}>
               <rect x={x} y={padT} width={bw} height={H - padT - padB} className="hit" />
-              {d.target > 0 && <rect x={x + bw / 2 - barW - 1} y={y(d.target)} width={barW} height={y(0) - y(d.target)} rx={2} className="bar s1" />}
+              {d.target > 0 && <rect x={single ? x + bw / 2 - barW / 2 : x + bw / 2 - barW - 1} y={y(d.target)} width={barW} height={y(0) - y(d.target)} rx={2} className="bar s1" />}
               {d.comparator > 0 && <rect x={x + bw / 2 + 1} y={y(d.comparator)} width={barW} height={y(0) - y(d.comparator)} rx={2} className="bar s2" />}
               {(i % 6 === 0) && <text x={x + bw / 2} y={H - 6} className="tick" textAnchor="middle">{d.month}</text>}
             </g>
           );
         })}
       </svg>
-      <div className="tooltip-line">{hover !== null ? `${data[hover].month}: 본건 권역 ${data[hover].target}건 · 비교 권역 ${data[hover].comparator}건` : "막대에 마우스를 올리면 월별 건수 표시"}</div>
+      <div className="tooltip-line">{hover !== null ? (single ? `${data[hover].month}: ${data[hover].target}건` : `${data[hover].month}: 본건 권역 ${data[hover].target}건 · 비교 권역 ${data[hover].comparator}건`) : "막대에 마우스를 올리면 월별 건수 표시"}</div>
     </div>
   );
 }

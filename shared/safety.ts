@@ -24,7 +24,7 @@ const FORBIDDEN_EXACT = new Set([
 
 /** 포함되면 금지하는 필드명 조각(정규화 후). */
 const FORBIDDEN_CONTAINS = [
-  "password", "secret", "token", "apikey", "cookie", "credential", "callback", "webhook", "connectionstring", "privatekey", "sessionid",
+  "password", "secret", "token", "apikey", "cookie", "credential", "callback", "webhook", "connectionstring", "privatekey", "sessionid", "cashflow", "waterfall",
 ];
 
 const SECRET_VALUE_PATTERNS: RegExp[] = [

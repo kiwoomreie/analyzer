@@ -60,3 +60,8 @@ code{background:#f0f2f5;padding:0 4px;border-radius:3px;font-size:12px}
 @media (max-width:900px){.grid3,.summary,.split,.map-wrap{grid-template-columns:1fr}}
 @media print{.top,.view-head .actions,.toolbar,.section>summary,.banner,.summary,.view-head,.section:not(#sec-report),h4,.sec-body>p,.sec-body>.toolbar{display:none!important}
   .section{border:none}.sec-body{border:none;padding:0}pre.report{max-height:none;border:none;background:#fff;font-size:11px}body{background:#fff}}
+.start .addr-row{display:flex;gap:8px;margin:8px 0}
+.start .addr{flex:1;font:inherit;font-size:16px;padding:9px 12px;border:1px solid #b9c0c8;border-radius:6px}
+.start .primary{font-size:15px;padding:8px 18px}
+.sub-details{margin:10px 0}.sub-details>summary{cursor:pointer;color:var(--accent)}
+.banner.info{background:var(--infobg)}

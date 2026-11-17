@@ -1,10 +1,10 @@
 import { useState } from "react";
 import { Badge, DateText, MapPanel, ModeBadge, Num, Section, Select, Text } from "../components.tsx";
 import type { SectionProps } from "../AnalysisView.tsx";
-import { CoordField } from "./PropertySection.tsx";
+import { CoordField } from "./InputSection.tsx";
 import {
-  EVENT_CATEGORY_LABEL, EVIDENCE_STATUS_LABEL, MILESTONE_LABEL, newKey,
-  type EventCategory, type EvidenceStatus, type LocationEvent, type MilestoneType,
+  EVENT_CATEGORY_LABEL, EVIDENCE_STATUS_LABEL, MILESTONE_LABEL, SUPPLY_STAGE_LABEL, newKey,
+  type EventCategory, type EvidenceStatus, type LocationEvent, type MilestoneType, type SupplyStage,
 } from "../../shared/model.ts";
 import { generalJsonImport } from "../../shared/importers.ts";
 import { isSecretLike } from "../../shared/safety.ts";
@@ -35,8 +35,8 @@ export function EventsSection({ rec, update, session }: SectionProps) {
     try { data = JSON.parse(await f.text()); } catch { return setMsg("JSON 형식이 아님"); }
     const res = generalJsonImport(data);
     if (!res.ok) return setMsg(`거절: ${res.errors.slice(0, 3).join(" / ")}`);
-    update((x) => { x.events.push(...res.result!.events); x.evidence.push(...res.result!.evidence); x.transactions.push(...res.result!.transactions); x.indexComparisons.push(...res.result!.indexComparisons); });
-    setMsg(`가져옴: 사건 ${res.result!.events.length} · 근거 ${res.result!.evidence.length} · 거래 ${res.result!.transactions.length} · 지수 ${res.result!.indexComparisons.length}${res.errors.length ? ` (경고 ${res.errors.length})` : ""}`);
+    update((x) => { x.events.push(...res.result!.events); x.evidence.push(...res.result!.evidence); x.transactions.push(...res.result!.transactions); x.dataLog.push({ at: seoulNowIso(), source: `사용자 JSON(${f.name.slice(0, 60)})`, detail: `사건 ${res.result!.events.length}·근거 ${res.result!.evidence.length}·거래 ${res.result!.transactions.length}` }); });
+    setMsg(`가져옴: 사건 ${res.result!.events.length} · 근거 ${res.result!.evidence.length} · 거래 ${res.result!.transactions.length}${res.errors.length ? ` (경고 ${res.errors.length})` : ""}`);
   };
 
   const attach = async (f: File) => {
@@ -58,16 +58,17 @@ export function EventsSection({ rec, update, session }: SectionProps) {
   };
 
   const mapPoints = [
-    ...(w.property.coordinates ? [{ n: 1, label: `본건: ${rec.title}`, lat: w.property.coordinates.lat, lng: w.property.coordinates.lng, detail: w.property.coordinates.senderVerified ? "협의체에서 확인한 좌표(새 앱 미검증)" : "확인 표시 없는 좌표", kind: "property" as const }] : []),
+    ...(w.property.coordinates ? [{ n: 1, label: `본건: ${rec.title}`, lat: w.property.coordinates.lat, lng: w.property.coordinates.lng, detail: `좌표 출처: ${w.property.coordinates.source}`, kind: "property" as const }] : []),
     ...w.events.filter((e) => e.location).map((e, i) => ({ n: (w.property.coordinates ? 2 : 1) + i, label: e.name, lat: e.location!.lat, lng: e.location!.lng, detail: `${EVENT_CATEGORY_LABEL[e.category]} · ${r.events.find((x) => x.key === e.key)?.access.text ?? ""}`, kind: "event" as const })),
   ];
 
   return (
-    <Section id="sec-events" title="② 입지 사건·근거" summary={`사건 ${w.events.length}건 · 근거 ${w.evidence.length}건 · 첨부 ${w.attachments.length}건`}>
+    <Section id="sec-events" title="입지 사건·근거 상세" summary={`사건 ${w.events.length}건 · 근거 ${w.evidence.length}건 · 첨부 ${w.attachments.length}건`}>
       <div className="toolbar">
-        <button onClick={() => addEvent("transport")} data-testid="add-event-transport">교통 변화 추가</button>
-        <button onClick={() => addEvent("employment")}>업무·고용시설 추가</button>
-        <button onClick={() => addEvent("supply")}>경쟁 공급 추가</button>
+        <button onClick={() => addEvent("transport")} data-testid="add-event-transport">교통</button>
+        <button onClick={() => addEvent("amenity")}>생활편의</button>
+        <button onClick={() => addEvent("development")}>개발사업</button>
+        <button onClick={() => addEvent("supply")} data-testid="add-event-supply">주변 입주 물량</button>
         <label className="filebtn">일반 JSON 가져오기<input type="file" accept=".json" onChange={(e: any) => { const f = e.target.files?.[0]; if (f) importJson(f); e.target.value = ""; }} /></label>
         <label className="filebtn">근거 첨부<input type="file" data-testid="attach" onChange={(e: any) => { const f = e.target.files?.[0]; if (f) attach(f); e.target.value = ""; }} /></label>
         {msg && <span className="small" data-testid="events-msg">{msg}</span>}
@@ -93,11 +94,19 @@ export function EventsSection({ rec, update, session }: SectionProps) {
               <Text label="사건명" value={ev.name} onChange={(v) => update((x) => { x.events[idx].name = v ?? ""; })} wide />
               <Select label="구분" value={ev.category} options={Object.entries(EVENT_CATEGORY_LABEL) as [EventCategory, string][]} onChange={(v) => update((x) => { x.events[idx].category = v; if (v === "supply" && !x.events[idx].supply) x.events[idx].supply = { stage: "plan" }; })} />
               <Select label="본건 영향 방향(검토자 판단)" value={ev.direction} options={DIR} onChange={(v) => update((x) => { x.events[idx].direction = v; })} />
-              <CoordField label="사건 위치(위도, 경도)" value={ev.location ? { ...ev.location, senderVerified: false } : undefined} onChange={(c) => update((x) => { x.events[idx].location = c ? { lat: c.lat, lng: c.lng, label: x.events[idx].location?.label } : undefined; })} />
+              <CoordField label="사건 위치(위도, 경도)" value={ev.location} onChange={(c) => update((x) => { x.events[idx].location = c; })} />
               {ev.category !== "supply" && <>
                 <Num label="실제 보행시간(경로 자료)" suffix="분" value={ev.access?.routeWalkMinutes} onChange={(v) => update((x) => { x.events[idx].access = { ...x.events[idx].access, routeWalkMinutes: v }; })} hint="경로 자료가 있을 때만 입력 — 직선거리로 환산하지 않음" />
                 <Text label="경로 자료 출처" value={ev.access?.routeSource} onChange={(v) => update((x) => { x.events[idx].access = { ...x.events[idx].access, routeSource: v }; })} />
                 <DateText label="경로 확인일" value={ev.access?.routeCheckedOn} dayOnly onChange={(v) => update((x) => { x.events[idx].access = { ...x.events[idx].access, routeCheckedOn: v }; })} />
+              </>}
+              {ev.category === "supply" && <>
+                <Select label="공급 단계" value={ev.supply?.stage ?? "plan"} options={Object.entries(SUPPLY_STAGE_LABEL) as [SupplyStage, string][]} onChange={(v) => update((x) => { x.events[idx].supply = { ...(x.events[idx].supply ?? { stage: "plan" }), stage: v }; })} />
+                <Num label="세대수" integer value={ev.supply?.households} onChange={(v) => update((x) => { x.events[idx].supply = { ...(x.events[idx].supply ?? { stage: "plan" }), households: v }; })} />
+                <Num label="전용면적 최소" suffix="㎡" value={ev.supply?.areaMinM2} onChange={(v) => update((x) => { x.events[idx].supply = { ...(x.events[idx].supply ?? { stage: "plan" }), areaMinM2: v }; })} />
+                <Num label="전용면적 최대" suffix="㎡" value={ev.supply?.areaMaxM2} onChange={(v) => update((x) => { x.events[idx].supply = { ...(x.events[idx].supply ?? { stage: "plan" }), areaMaxM2: v }; })} />
+                <DateText label="분양 시기" value={ev.supply?.saleDate} onChange={(v) => update((x) => { x.events[idx].supply = { ...(x.events[idx].supply ?? { stage: "plan" }), saleDate: v }; })} />
+                <DateText label="입주 시기" value={ev.supply?.occupancyDate} onChange={(v) => update((x) => { x.events[idx].supply = { ...(x.events[idx].supply ?? { stage: "plan" }), occupancyDate: v }; })} />
               </>}
               <div><ModeBadge mode={ev.dataMode} /> <button className="link danger" onClick={() => { update((x) => { x.events.splice(idx, 1); }); setSelKey(null); }}>사건 삭제</button></div>
             </div>
@@ -122,12 +131,10 @@ export function EventsSection({ rec, update, session }: SectionProps) {
             </table>
             <button onClick={() => update((x) => { x.events[idx].milestones.push({ key: newKey("ms"), type: "announcement", status: "planned", collectedOn: seoulToday(), evidenceKeys: [] }); })} data-testid="add-milestone">일정 추가</button>
 
-            {er && ev.category !== "supply" && (
+            {er && (
               <div className="card sub small" data-testid="event-result">
-                <div>기준일 현재 단계: <b>{er.stageAsOf}</b> · 최초 개통·개장 {formatDateValue(er.initialOpening)} → 현재 {formatDateValue(er.expectedOpening)} {er.delayCount ? `(지연 ${er.delayCount}회)` : ""}</div>
-                <div>일정 비교: {er.scheduleGaps.length ? er.scheduleGaps.map((g) => g.text).join(" · ") : "비교할 일정 없음"}</div>
-                {er.delayedScenario && <div>지연 {er.delayedScenario.delayMonths}개월 가정: {formatDateValue(er.delayedScenario.opening)}{er.delayedScenario.gapToMaturity !== null ? ` — 만기보다 ${er.delayedScenario.gapToMaturity}개월 ${er.delayedScenario.gapToMaturity >= 0 ? "뒤" : "앞"}` : ""}</div>}
-                {er.maturityNote && <div className="warn-text">{er.maturityNote}</div>}
+                <div>기준일 현재 단계: <b>{er.stageAsOf}</b> · 최초 예정 {formatDateValue(er.initialTarget)} → 현재 {formatDateValue(er.expectedTarget)} {er.delayCount ? `(지연 ${er.delayCount}회)` : ""}</div>
+                <div>본건 일정 비교: {er.scheduleGaps.length ? er.scheduleGaps.map((g) => g.text).join(" · ") : "본건 분양·준공 예정일 미입력 — 비교 안 함"}</div>
                 <div>접근성: {er.access.text}</div>
               </div>
             )}
@@ -138,7 +145,7 @@ export function EventsSection({ rec, update, session }: SectionProps) {
         )}
       </div>
 
-      <h4>위치</h4>
+      <h4>위치 <span className="muted small">번호 마커 · 상세는 오른쪽 목록</span></h4>
       <MapPanel points={mapPoints} kakaoKey={session?.config.kakaoJsKey ?? null} />
 
       <h4>첨부 <span className="muted small">텍스트는 그대로 텍스트로만 표시 · HTML·스크립트·주소를 실행·조회하지 않음</span></h4>

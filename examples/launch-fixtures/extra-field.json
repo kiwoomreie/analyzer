@@ -1,0 +1,43 @@
+{
+  "documentType": "location-analysis-launch",
+  "schemaVersion": "1.0",
+  "launchId": "fixture-launch-0009",
+  "createdAt": "2026-10-31T10:00:00+09:00",
+  "asOf": "2026-10-31",
+  "sourceLabel": "[가상] 시험자료",
+  "property": {
+    "displayName": "[가상] 누리역 A1",
+    "address": "[가상] 누리시 가람동 100",
+    "coordinates": {
+      "lat": 37.412,
+      "lng": 127.126,
+      "senderVerified": true
+    },
+    "assetType": "apartment",
+    "exclusiveAreaM2": 84,
+    "comparisonType": "84A",
+    "cashflowModel": {}
+  },
+  "selectedPrices": {
+    "prices": [
+      {
+        "kind": "proposedSalePrice",
+        "amount": 8.4,
+        "unit": "KRW_100M",
+        "basis": "household",
+        "basisDate": "2026-10"
+      }
+    ]
+  },
+  "schedule": {
+    "saleStart": "2027-03",
+    "completion": "2029-12"
+  },
+  "scenario": {
+    "name": "[가상] 기본"
+  },
+  "analysisOptions": {
+    "comparisonMonthsBefore": 24,
+    "comparisonMonthsAfter": 24
+  }
+}

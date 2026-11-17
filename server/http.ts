@@ -95,7 +95,7 @@ export function sendPage(res: ServerResponse, status: number, title: string, bod
   res.statusCode = status;
   res.setHeader("Content-Type", "text/html; charset=utf-8");
   res.setHeader("Cache-Control", "no-store");
-  res.end(`<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escHtml(title)}</title><link rel="stylesheet" href="/assets/page.css"></head><body><main class="notice"><h1>${escHtml(title)}</h1>${bodyHtml}<p class="muted">입지 변화·가격영향 분석기 · 이 화면은 협의체로 결과를 보내지 않습니다.</p></main></body></html>`);
+  res.end(`<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escHtml(title)}</title><link rel="stylesheet" href="/assets/page.css"></head><body><main class="notice"><h1>${escHtml(title)}</h1>${bodyHtml}<p class="muted">아파트 입지·가격 분석기 · 이 화면은 협의체로 결과를 보내지 않습니다.</p></main></body></html>`);
 }
 
 export function redirect303(res: ServerResponse, location: string) {

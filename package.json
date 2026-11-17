@@ -2,7 +2,7 @@
   "name": "location-analyzer",
   "version": "0.1.0",
   "private": true,
-  "description": "입지 변화·가격영향 분석기 — 분양가·담보가치·회수시점 검증",
+  "description": "아파트 입지·가격 분석기 — 분양가·담보가치·회수시점 검증",
   "type": "module",
   "engines": {
     "node": ">=22.13 <23"

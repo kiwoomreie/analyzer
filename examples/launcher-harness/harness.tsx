@@ -1,3 +1,4 @@
+// [대기·미확정 초안] 협의체 연동은 입력 규격·수신 주소 확정 전까지 대기 상태입니다. docs/committee-button-integration.md 참고.
 // 인계물 ⑤ — LauncherHarness: 기존 협의체 없이 버튼 실행·새 탭·자동 입력·자동 분석을 검증하는 [가상] 송신 화면.
 // 실제 Archive 화면이 아니며, 이 화면의 성공을 ‘Archive 연결 완료’로 보지 않는다.
 import { createRoot } from "react-dom/client";

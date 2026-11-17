@@ -1,47 +1,114 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:location-analyzer:contracts:location-analysis-launch:1.0",
-  "title": "입지 변화·가격영향 분석기 — 시동(launch)·협의체 반출(import) 입력 계약 v1.0",
-  "description": "협의체 → 분석기 단방향 입력. documentType으로 시동(location-analysis-launch)과 수동 반출 파일(location-analysis-import)을 구분하며 두 형식은 같은 내부 분석 모델로 변환된다. 모든 객체는 정의되지 않은 필드를 허용하지 않는다. 금액 단위(unit)와 가격 기준(basis)은 별도 필드이다. 이 계약의 어떤 식별자도 권한·송신자 인증이 아니다.",
+  "title": "[대기·미확정 초안] 아파트 입지·가격 분석기 — 시동(launch)·협의체 반출(import) 입력 계약 v1.0",
+  "description": "상태: 대기(미확정). 수신 주소·입력 규격 확정 전 초안이며 /launch 수신은 기본 비활성. 현재 분석기는 아파트만 다루며 채권정보·만기·예상 처분·사업 전체 가격·시나리오 하락률은 사용하지 않음(확정 시 제거 권장). 협의체 → 분석기 단방향 입력. documentType으로 시동(location-analysis-launch)과 수동 반출 파일(location-analysis-import)을 구분하며 두 형식은 같은 내부 분석 모델로 변환된다. 모든 객체는 정의되지 않은 필드를 허용하지 않는다. 금액 단위(unit)와 가격 기준(basis)은 별도 필드이다. 이 계약의 어떤 식별자도 권한·송신자 인증이 아니다.",
   "oneOf": [
-    { "$ref": "#/$defs/launchDocument" },
-    { "$ref": "#/$defs/importDocument" }
+    {
+      "$ref": "#/$defs/launchDocument"
+    },
+    {
+      "$ref": "#/$defs/importDocument"
+    }
   ],
   "$defs": {
     "launchDocument": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["documentType", "schemaVersion", "launchId", "createdAt", "asOf", "property"],
+      "required": [
+        "documentType",
+        "schemaVersion",
+        "launchId",
+        "createdAt",
+        "asOf",
+        "property"
+      ],
       "properties": {
-        "documentType": { "const": "location-analysis-launch" },
-        "schemaVersion": { "const": "1.0" },
-        "launchId": { "$ref": "#/$defs/externalId", "description": "버튼 클릭 시 생성하는 요청 식별자. 중복 판별용이며 권한이 아님." },
-        "createdAt": { "$ref": "#/$defs/dateTime", "description": "협의체에서 사본을 만든 시각(시간대 포함)." },
-        "asOf": { "$ref": "#/$defs/date", "description": "분석 기준일(Asia/Seoul 달력 날짜)." },
-        "sourceLabel": { "$ref": "#/$defs/label", "description": "출처 설명용 문구. 인증 근거가 아님." },
-        "property": { "$ref": "#/$defs/property" },
-        "selectedPrices": { "$ref": "#/$defs/selectedPrices" },
-        "schedule": { "$ref": "#/$defs/schedule" },
-        "scenario": { "$ref": "#/$defs/scenario" },
-        "analysisOptions": { "$ref": "#/$defs/analysisOptions" }
+        "documentType": {
+          "const": "location-analysis-launch"
+        },
+        "schemaVersion": {
+          "const": "1.0"
+        },
+        "launchId": {
+          "$ref": "#/$defs/externalId",
+          "description": "버튼 클릭 시 생성하는 요청 식별자. 중복 판별용이며 권한이 아님."
+        },
+        "createdAt": {
+          "$ref": "#/$defs/dateTime",
+          "description": "협의체에서 사본을 만든 시각(시간대 포함)."
+        },
+        "asOf": {
+          "$ref": "#/$defs/date",
+          "description": "분석 기준일(Asia/Seoul 달력 날짜)."
+        },
+        "sourceLabel": {
+          "$ref": "#/$defs/label",
+          "description": "출처 설명용 문구. 인증 근거가 아님."
+        },
+        "property": {
+          "$ref": "#/$defs/property"
+        },
+        "selectedPrices": {
+          "$ref": "#/$defs/selectedPrices"
+        },
+        "schedule": {
+          "$ref": "#/$defs/schedule"
+        },
+        "scenario": {
+          "$ref": "#/$defs/scenario"
+        },
+        "analysisOptions": {
+          "$ref": "#/$defs/analysisOptions"
+        }
       }
     },
     "importDocument": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["documentType", "schemaVersion", "exportId", "exportedAt", "asOf", "property"],
+      "required": [
+        "documentType",
+        "schemaVersion",
+        "exportId",
+        "exportedAt",
+        "asOf",
+        "property"
+      ],
       "properties": {
-        "documentType": { "const": "location-analysis-import" },
-        "schemaVersion": { "const": "1.0" },
-        "exportId": { "$ref": "#/$defs/externalId", "description": "반출 파일 식별자. 같은 저장 범위에서 동일 내용은 중복, 다른 내용은 충돌로 처리." },
-        "exportedAt": { "$ref": "#/$defs/dateTime" },
-        "asOf": { "$ref": "#/$defs/date" },
-        "sourceLabel": { "$ref": "#/$defs/label" },
-        "property": { "$ref": "#/$defs/property" },
-        "selectedPrices": { "$ref": "#/$defs/selectedPrices" },
-        "schedule": { "$ref": "#/$defs/schedule" },
-        "scenario": { "$ref": "#/$defs/scenario" },
-        "analysisOptions": { "$ref": "#/$defs/analysisOptions" }
+        "documentType": {
+          "const": "location-analysis-import"
+        },
+        "schemaVersion": {
+          "const": "1.0"
+        },
+        "exportId": {
+          "$ref": "#/$defs/externalId",
+          "description": "반출 파일 식별자. 같은 저장 범위에서 동일 내용은 중복, 다른 내용은 충돌로 처리."
+        },
+        "exportedAt": {
+          "$ref": "#/$defs/dateTime"
+        },
+        "asOf": {
+          "$ref": "#/$defs/date"
+        },
+        "sourceLabel": {
+          "$ref": "#/$defs/label"
+        },
+        "property": {
+          "$ref": "#/$defs/property"
+        },
+        "selectedPrices": {
+          "$ref": "#/$defs/selectedPrices"
+        },
+        "schedule": {
+          "$ref": "#/$defs/schedule"
+        },
+        "scenario": {
+          "$ref": "#/$defs/scenario"
+        },
+        "analysisOptions": {
+          "$ref": "#/$defs/analysisOptions"
+        }
       }
     },
     "externalId": {
@@ -63,76 +130,210 @@
       "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}(:\\d{2}(\\.\\d{1,6})?)?(Z|[+-]\\d{2}:\\d{2})$",
       "description": "시간대를 포함한 ISO 8601 시각."
     },
-    "label": { "type": "string", "minLength": 1, "maxLength": 120 },
+    "label": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    },
     "moneyUnit": {
-      "enum": ["KRW", "KRW_10K", "KRW_100M"],
+      "enum": [
+        "KRW",
+        "KRW_10K",
+        "KRW_100M"
+      ],
       "description": "금액 단위: KRW=원, KRW_10K=만원, KRW_100M=억원. 내부 계산은 원으로 정규화."
     },
     "priceBasis": {
-      "enum": ["household", "project", "perExclusiveM2", "perExclusivePyeong"],
+      "enum": [
+        "household",
+        "project",
+        "perExclusiveM2",
+        "perExclusivePyeong"
+      ],
       "description": "가격 기준: household=세대(호실)당, project=사업 전체, perExclusiveM2=전용㎡당, perExclusivePyeong=전용평당(1평=400/121㎡). 사업 전체 가격은 세대 전용면적으로 나누지 않으며 총세대수만으로 환산하지 않는다."
     },
     "property": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["assetType"],
+      "required": [
+        "assetType"
+      ],
       "properties": {
-        "displayName": { "type": "string", "minLength": 1, "maxLength": 120 },
-        "address": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "displayName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "address": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
         "coordinates": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["lat", "lng", "senderVerified"],
+          "required": [
+            "lat",
+            "lng",
+            "senderVerified"
+          ],
           "properties": {
-            "lat": { "type": "number", "minimum": 33, "maximum": 39 },
-            "lng": { "type": "number", "minimum": 124, "maximum": 132 },
-            "senderVerified": { "type": "boolean", "description": "협의체에서 확인한 좌표인지 여부. 새 앱이 검증한 사실이 아님." }
+            "lat": {
+              "type": "number",
+              "minimum": 33,
+              "maximum": 39
+            },
+            "lng": {
+              "type": "number",
+              "minimum": 124,
+              "maximum": 132
+            },
+            "senderVerified": {
+              "type": "boolean",
+              "description": "협의체에서 확인한 좌표인지 여부. 새 앱이 검증한 사실이 아님."
+            }
           }
         },
         "assetType": {
-          "enum": ["apartment", "officetel", "office", "hotel", "retail", "logistics", "mixedUse", "other"],
+          "enum": [
+            "apartment",
+            "officetel",
+            "office",
+            "hotel",
+            "retail",
+            "logistics",
+            "mixedUse",
+            "other"
+          ],
           "description": "v1.0은 apartment만 분석. 그 외는 허용 입력 사본만 임시 보존하고 '현재 아파트만 지원' 안내."
         },
-        "exclusiveAreaM2": { "type": "number", "exclusiveMinimum": 0, "maximum": 1000, "description": "비교 타입 1세대의 전용면적(㎡)." },
-        "totalExclusiveAreaM2": { "type": "number", "exclusiveMinimum": 0, "maximum": 10000000, "description": "사업 전체 가격을 ㎡당으로 환산할 때만 쓰는 사업 전체 전용면적 합계(㎡). 없으면 환산하지 않음." },
-        "comparisonType": { "type": "string", "minLength": 1, "maxLength": 40 },
-        "householdCount": { "type": "integer", "minimum": 1, "maximum": 100000, "description": "참고 표시용. 가격 환산에 쓰지 않음." },
-        "lawdCode": { "type": "string", "pattern": "^\\d{5}$", "description": "시군구 5자리 코드(실거래 조회용, 선택)." }
+        "exclusiveAreaM2": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1000,
+          "description": "비교 타입 1세대의 전용면적(㎡)."
+        },
+        "totalExclusiveAreaM2": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 10000000,
+          "description": "사업 전체 가격을 ㎡당으로 환산할 때만 쓰는 사업 전체 전용면적 합계(㎡). 없으면 환산하지 않음."
+        },
+        "comparisonType": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "householdCount": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100000,
+          "description": "참고 표시용. 가격 환산에 쓰지 않음."
+        },
+        "lawdCode": {
+          "type": "string",
+          "pattern": "^\\d{5}$",
+          "description": "시군구 5자리 코드(실거래 조회용, 선택)."
+        }
       }
     },
     "price": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["kind", "amount", "unit", "basis"],
+      "required": [
+        "kind",
+        "amount",
+        "unit",
+        "basis"
+      ],
       "properties": {
-        "kind": { "enum": ["proposedSalePrice", "appraisalValue", "disposalPrice"], "description": "제시 분양가 / 평가액 / 처분가" },
-        "amount": { "type": "number", "exclusiveMinimum": 0, "maximum": 1e16 },
-        "unit": { "$ref": "#/$defs/moneyUnit" },
-        "basis": { "$ref": "#/$defs/priceBasis" },
-        "basisDate": { "$ref": "#/$defs/dateOrMonth" }
+        "kind": {
+          "enum": [
+            "proposedSalePrice",
+            "appraisalValue",
+            "disposalPrice"
+          ],
+          "description": "제시 분양가 / 평가액 / 처분가"
+        },
+        "amount": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1e+16
+        },
+        "unit": {
+          "$ref": "#/$defs/moneyUnit"
+        },
+        "basis": {
+          "$ref": "#/$defs/priceBasis"
+        },
+        "basisDate": {
+          "$ref": "#/$defs/dateOrMonth"
+        }
       }
     },
     "debt": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["includedByUserChoice", "amount", "unit", "definition", "seniorStatus"],
+      "required": [
+        "includedByUserChoice",
+        "amount",
+        "unit",
+        "definition",
+        "seniorStatus"
+      ],
       "description": "선택 항목. 협의체 사용자가 현재 사업장에 대해 '채권정보 포함'을 명시적으로 선택한 경우에만 포함한다. 기본값은 제외.",
       "properties": {
-        "includedByUserChoice": { "const": true },
-        "amount": { "type": "number", "exclusiveMinimum": 0, "maximum": 1e16 },
-        "unit": { "$ref": "#/$defs/moneyUnit" },
-        "definition": { "enum": ["loanBalance", "maxSecuredAmount"], "description": "loanBalance=대출잔액, maxSecuredAmount=채권최고액. 혼용 금지." },
-        "seniorStatus": { "enum": ["confirmedNone", "confirmedAmount", "unknown"], "description": "선순위: 없음 확인 / 금액 확인 / 미확인. 미확인을 0원으로 처리하지 않음." },
-        "seniorAmount": { "type": "number", "minimum": 0, "maximum": 1e16, "description": "seniorStatus=confirmedAmount일 때 필요. 단위는 unit과 동일." },
-        "basisDate": { "$ref": "#/$defs/dateOrMonth" }
+        "includedByUserChoice": {
+          "const": true
+        },
+        "amount": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1e+16
+        },
+        "unit": {
+          "$ref": "#/$defs/moneyUnit"
+        },
+        "definition": {
+          "enum": [
+            "loanBalance",
+            "maxSecuredAmount"
+          ],
+          "description": "loanBalance=대출잔액, maxSecuredAmount=채권최고액. 혼용 금지."
+        },
+        "seniorStatus": {
+          "enum": [
+            "confirmedNone",
+            "confirmedAmount",
+            "unknown"
+          ],
+          "description": "선순위: 없음 확인 / 금액 확인 / 미확인. 미확인을 0원으로 처리하지 않음."
+        },
+        "seniorAmount": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1e+16,
+          "description": "seniorStatus=confirmedAmount일 때 필요. 단위는 unit과 동일."
+        },
+        "basisDate": {
+          "$ref": "#/$defs/dateOrMonth"
+        }
       }
     },
     "selectedPrices": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "prices": { "type": "array", "maxItems": 12, "items": { "$ref": "#/$defs/price" } },
-        "debt": { "$ref": "#/$defs/debt" }
+        "prices": {
+          "type": "array",
+          "maxItems": 12,
+          "items": {
+            "$ref": "#/$defs/price"
+          }
+        },
+        "debt": {
+          "$ref": "#/$defs/debt"
+        }
       }
     },
     "schedule": {
@@ -140,10 +341,18 @@
       "additionalProperties": false,
       "description": "전달된 고정 날짜. 실행일 기준 자동 변경(예: 오늘+60개월) 금지.",
       "properties": {
-        "saleStart": { "$ref": "#/$defs/dateOrMonth" },
-        "completion": { "$ref": "#/$defs/dateOrMonth" },
-        "maturity": { "$ref": "#/$defs/dateOrMonth" },
-        "expectedDisposal": { "$ref": "#/$defs/dateOrMonth" }
+        "saleStart": {
+          "$ref": "#/$defs/dateOrMonth"
+        },
+        "completion": {
+          "$ref": "#/$defs/dateOrMonth"
+        },
+        "maturity": {
+          "$ref": "#/$defs/dateOrMonth"
+        },
+        "expectedDisposal": {
+          "$ref": "#/$defs/dateOrMonth"
+        }
       }
     },
     "scenario": {
@@ -151,19 +360,52 @@
       "additionalProperties": false,
       "description": "명시적으로 입력된 숫자만 사용. 시나리오 이름으로 숨겨진 규칙을 재현하지 않음.",
       "properties": {
-        "name": { "type": "string", "minLength": 1, "maxLength": 80 },
-        "priceDeclinePct": { "type": "number", "minimum": 0, "maximum": 100, "description": "가격 하락률(%)." },
-        "eventDelayMonths": { "type": "integer", "minimum": 0, "maximum": 240, "description": "입지사건(개통 등) 지연 개월." },
-        "disposalDelayMonths": { "type": "integer", "minimum": 0, "maximum": 240, "description": "처분 지연 개월." }
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "priceDeclinePct": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100,
+          "description": "가격 하락률(%)."
+        },
+        "eventDelayMonths": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 240,
+          "description": "입지사건(개통 등) 지연 개월."
+        },
+        "disposalDelayMonths": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 240,
+          "description": "처분 지연 개월."
+        }
       }
     },
     "analysisOptions": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "comparisonMonthsBefore": { "type": "integer", "minimum": 1, "maximum": 120, "description": "사건 전 비교기간(개월). 기본 24." },
-        "comparisonMonthsAfter": { "type": "integer", "minimum": 1, "maximum": 120, "description": "사건 후 비교기간(개월). 기본 24." },
-        "purpose": { "type": "string", "minLength": 1, "maxLength": 300 }
+        "comparisonMonthsBefore": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 120,
+          "description": "사건 전 비교기간(개월). 기본 24."
+        },
+        "comparisonMonthsAfter": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 120,
+          "description": "사건 후 비교기간(개월). 기본 24."
+        },
+        "purpose": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
+        }
       }
     }
   }

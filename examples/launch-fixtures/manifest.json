@@ -1,0 +1,57 @@
+{
+  "note": "[가상] 입력 계약 v1.0(대기·미확정) 시험자료. expect: accept|reject, status는 /launch 활성 시 응답 코드",
+  "cases": [
+    {
+      "file": "valid-full.json",
+      "expect": "accept",
+      "status": 303
+    },
+    {
+      "file": "valid-minimal.json",
+      "expect": "accept",
+      "status": 303
+    },
+    {
+      "file": "duplicate-changed.json",
+      "expect": "accept-then-conflict",
+      "status": 303,
+      "note": "valid-full과 같은 launchId·다른 내용 → 수령 시 409"
+    },
+    {
+      "file": "forbidden-callback.json",
+      "expect": "reject",
+      "status": 400
+    },
+    {
+      "file": "forbidden-secret-value.json",
+      "expect": "reject",
+      "status": 400
+    },
+    {
+      "file": "forbidden-analysis-id.json",
+      "expect": "reject",
+      "status": 400
+    },
+    {
+      "file": "wrong-unit.json",
+      "expect": "reject",
+      "status": 422
+    },
+    {
+      "file": "wrong-date.json",
+      "expect": "reject",
+      "status": 422
+    },
+    {
+      "file": "missing-required.json",
+      "expect": "reject",
+      "status": 422
+    },
+    {
+      "file": "extra-field.json",
+      "expect": "reject",
+      "status": 400,
+      "note": "cashflowModel → 금지 필드(cashflow 포함)"
+    }
+  ]
+}

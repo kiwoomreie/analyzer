@@ -1,198 +1,112 @@
-// 분석 엔진(순수 함수). 화면·보고서·서버 자동 분석이 모두 이 함수를 사용한다.
-// 원칙: 관찰된 변화 / 비교대상과의 차이 / 인과 추정 효과 / 사용자 스트레스 가정을 구분한다.
-// 검증된 통계 모델이 없으므로 인과 추정 효과는 항상 '미추정'이다.
-import { LABELS, type PriceKind } from "./contract.ts";
+// 아파트 입지·가격 분석 엔진(순수 함수). 화면·보고서가 같은 결과를 사용한다.
+// 원칙: 확인된 사실 / 관찰된 변화 / 비교 차이 / 미추정을 구분하고, 자료가 없으면 적정가격·상승률을 만들지 않는다.
 import { addMonths, compareMonth, formatDateValue, isBefore, monthDiff, parseDateValue, type DateParts } from "./dates.ts";
 import { hashOf } from "./hash.ts";
 import {
-  DATA_MODE_LABEL, ENGINE_VERSION, EVENT_CATEGORY_LABEL, EVIDENCE_STATUS_LABEL, MILESTONE_LABEL, SUPPLY_STAGE_LABEL,
+  complexKeyOf, DATA_MODE_LABEL, ENGINE_VERSION, EVENT_CATEGORY_LABEL, MILESTONE_LABEL, SUPPLY_STAGE_LABEL,
   type DataMode, type EvidenceStatus, type LocationEvent, type Milestone, type Transaction, type WorkingInputs,
 } from "./model.ts";
-import { deriveUnitPrices, fmtEok, fmtMan, fmtPct, fmtPp, m2ToPyeong, safeDivide, toKrw, type UnitPrices } from "./units.ts";
+import { deriveUnitPrices, fmtMan, fmtPct, m2ToPyeong, safeDivide, toKrw } from "./units.ts";
+import { LABELS } from "./contract.ts";
 
 export type Level = "high" | "medium" | "low";
+export interface Flag { level: Level; area: "location" | "price" | "supply" | "data"; text: string }
+export interface MissingItem { field: string; label: string; affects: string }
 
-export interface Flag {
-  level: Level;
-  area: "location" | "price" | "supply" | "schedule" | "data" | "ltv";
-  text: string;
-}
-
-export interface MissingItem {
-  field: string;
-  label: string;
-  affects: string;
-}
-
-export interface PriceResult {
-  key: string;
-  kind: PriceKind;
-  label: string;
-  input: string;
-  dataMode: DataMode;
-  basisDate: string;
-  unit: UnitPrices | null;
-  error?: string;
-}
-
-export interface ScheduleGap {
-  against: "saleStart" | "completion" | "maturity" | "expectedDisposal";
-  label: string;
-  months: number;
-  text: string;
+export interface Stats {
+  count: number; complexes: number;
+  medianPerM2: number | null; meanPerM2: number | null; p25PerM2: number | null; p75PerM2: number | null; minPerM2: number | null; maxPerM2: number | null;
 }
 
 export interface EventResult {
-  key: string;
-  name: string;
-  category: LocationEvent["category"];
-  categoryLabel: string;
-  direction: LocationEvent["direction"];
-  dataMode: DataMode;
-  stageAsOf: string;
-  cancelled: boolean;
-  announcement: DateParts | null;
-  initialOpening: DateParts | null;
-  expectedOpening: DateParts | null;
-  expectedOpeningStatus: "planned" | "actual" | null;
-  delayCount: number;
+  key: string; name: string; category: LocationEvent["category"]; categoryLabel: string; direction: LocationEvent["direction"]; dataMode: DataMode;
+  stageAsOf: string; cancelled: boolean;
+  announcement: DateParts | null; initialTarget: DateParts | null; expectedTarget: DateParts | null; expectedTargetStatus: "planned" | "actual" | null; delayCount: number;
   timeline: { key: string; type: string; status: string; date: string; announcedOn: string; collectedOn: string; knownAsOf: boolean; note?: string }[];
-  excludedAfterAsOf: number;
-  undatedKnowledge: number;
-  scheduleGaps: ScheduleGap[];
-  delayedScenario: { delayMonths: number; opening: DateParts; gapToMaturity: number | null } | null;
-  maturityNote: string | null;
+  excludedAfterAsOf: number; undatedKnowledge: number;
+  scheduleGaps: { against: "saleStart" | "completion"; label: string; months: number; text: string }[];
   access: { straightDistanceM: number | null; walkMinutes: number | null; text: string };
   evidence: { total: number; byStatus: Record<EvidenceStatus, number>; confirmedOfficial: boolean };
-  prepricing: PrepricingResult | null;
+  prepricing: { text: string; assessment: "possible" | "unclear" | "notApplicable"; shareAfter: number | null; quantification: "정량 분리 어려움" } | null;
 }
 
-export interface PrepricingResult {
-  announcement: string;
-  appraisalBasisDate: string;
-  appraisalAfterAnnouncement: boolean | null;
-  compsAfterAnnouncementShare: number | null;
-  assessment: "possible" | "unclear" | "notApplicable";
-  quantification: "정량 분리 어려움";
+export interface ComplexResult {
+  complexKey: string; name: string; dong?: string;
+  buildYear: number | null; buildYearSource: string;
+  distanceM: number | null; distanceSource: string;
+  recentTrades: number; recentAreaMin: number | null; recentAreaMax: number | null;
+  stats: Stats; latestTrade: string | null;
+  status: "selected" | "eligible" | "excluded";
+  reasons: string[];
+  selectionReason: string;
+  differences: { buildYearDiff: number | null; distanceM: number | null; areaDiffM2: number | null };
+  dataModes: DataMode[];
+  sources: string[];
+}
+
+export interface MarketResult {
+  recentWindow: { start: string; end: string; months: number };
+  areaFilter: { minM2: number; maxM2: number } | null;
+  complexes: ComplexResult[];
+  comparables: ComplexResult[];
+  pooled: Stats;
+  excludedTrades: Record<string, number>;
+  validTrades: number;
+  txRows: { key: string; complexKey: string; included: boolean; reasons: string[]; perM2: number | null }[];
+  dataModes: DataMode[];
+  sources: string[];
+}
+
+export interface PriceComparison {
+  status: "computed" | "held";
+  reason?: string;
+  reviewText: string;
+  reviewPerM2: number | null;
+  reviewPerPyeong: number | null;
+  basisDate: string;
+  comparableMedianPerM2: number | null;
+  comparableRange: { min: number; max: number } | null;
+  diffPct: number | null;
+  position: "above" | "within" | "below" | null;
   text: string;
 }
 
-export interface Stats {
-  count: number;
-  complexes: number;
-  medianPerM2: number | null;
-  meanPerM2: number | null;
-  p25PerM2: number | null;
-  p75PerM2: number | null;
-  minPerM2: number | null;
-  maxPerM2: number | null;
-}
-
-export interface CompsResult {
-  anchor: { label: string; date: DateParts };
-  window: { start: DateParts; end: DateParts; endCappedByAsOf: boolean; monthsBefore: number; monthsAfter: number };
-  areaBand: { minM2: number; maxM2: number } | null;
-  rows: { key: string; included: boolean; reasons: string[]; perM2: number | null; period: "pre" | "post" | "anchorMonth" | null; group: "target" | "comparator"; dataMode: DataMode }[];
-  exclusionCounts: Record<string, number>;
-  target: { all: Stats; pre: Stats; post: Stats };
-  comparator: { all: Stats; pre: Stats; post: Stats };
-  monthly: { month: string; target: number; comparator: number; targetMedianPerM2: number | null }[];
-  emptyMonths: number;
-  dataCoverage: { firstMonth: string | null; lastMonth: string | null; shortOfWindow: boolean };
-  observed: {
-    targetChangePct: number | null;
-    comparatorChangePct: number | null;
-    diffPp: number | null;
-    relativeGapPct: number | null;
-    sampleSufficient: boolean;
-    text: string;
-  };
-  proposedComparison: { proposedPerM2: number | null; compsMedianPerM2: number | null; diffPct: number | null; text: string };
-  validSample: boolean;
-  dataModes: DataMode[];
-}
-
-export interface IndexComparisonResult {
-  key: string;
-  label: string;
-  source: string;
-  dataMode: DataMode;
-  targetChangePct: number | null;
-  comparatorChangePct: number | null;
-  diffPp: number | null;
-  relativeGapPct: number | null;
+export interface ObservedChange {
+  status: "computed" | "notComputed";
+  anchor: string;
+  window: string;
+  pre: Stats; post: Stats;
+  changePct: number | null;
   text: string;
 }
 
 export interface SupplyResult {
-  key: string;
-  name: string;
-  stage: string;
-  households: number | null;
-  dataMode: DataMode;
-  timing: "yes" | "no" | "unknown";
-  area: "yes" | "no" | "unknown";
-  price: "yes" | "no" | "unknown";
-  demand: "yes" | "no" | "unknown";
-  overlapCount: number;
-  notes: string[];
-}
-
-export interface LtvRow {
-  label: string;
-  valueKrw: number;
-  ownLtvPct: number | null;
-  combinedLtvPct: number | null;
-}
-
-export interface LtvResult {
-  status: "computed" | "notComputable";
-  reasons: string[];
-  definition: string | null;
-  seniorText: string | null;
-  numeratorOwnKrw: number | null;
-  numeratorCombinedKrw: number | null;
-  valueLabel: string | null;
-  valueBasisDate: string | null;
-  debtBasisDate: string | null;
-  rows: LtvRow[];
-  note: string;
+  key: string; name: string; stage: string; households: number | null; dataMode: DataMode;
+  timing: "yes" | "no" | "unknown"; area: "yes" | "no" | "unknown"; notes: string[];
 }
 
 export interface AnalysisResult {
-  engineVersion: string;
-  inputHash: string;
-  asOf: string;
-  assetSupported: boolean;
-  unsupportedMessage?: string;
+  engineVersion: string; inputHash: string; asOf: string;
   missing: MissingItem[];
-  property: { exclusiveAreaM2: number | null; exclusivePyeong: number | null; coordinatesText: string };
-  prices: PriceResult[];
+  property: { address: string; exclusiveAreaM2: number | null; exclusivePyeong: number | null; buildYear: number | null; coordinatesText: string };
   events: EventResult[];
-  comps: CompsResult | null;
-  indexComparisons: IndexComparisonResult[];
-  supply: { rows: SupplyResult[]; stageCounts: Record<string, number>; overlappingHouseholds: number; text: string };
+  market: MarketResult;
+  price: PriceComparison;
+  observed: ObservedChange;
+  supply: { rows: SupplyResult[]; window: string; overlappingHouseholds: number; text: string };
   causalEffect: { status: "notEstimated"; text: string };
-  stress: {
-    priceDeclinePct: number | null;
-    stressedValueKrw: number | null;
-    disposal: { base: string; delayMonths: number | null; delayed: string | null; gapToMaturityMonths: number | null; text: string } | null;
-  };
-  ltv: LtvResult;
   flags: Flag[];
   summary: {
     location: { key: string; text: string; detail: string }[];
-    price: { observed: string; comparison: string; causal: string; stress: string; evidence: string };
+    price: { comparison: string; comparables: string; observed: string; prepricing: string; causal: string; basis: string };
     uncertainties: Flag[];
   };
 }
 
-// ───────────────────────── helpers
+// ───────────── helpers
 function quantile(sorted: number[], q: number): number | null {
   if (!sorted.length) return null;
-  const pos = (sorted.length - 1) * q;
-  const lo = Math.floor(pos);
-  const hi = Math.ceil(pos);
+  const pos = (sorted.length - 1) * q, lo = Math.floor(pos), hi = Math.ceil(pos);
   return sorted[lo] + (sorted[hi] - sorted[lo]) * (pos - lo);
 }
 
@@ -200,488 +114,389 @@ export function computeStats(rows: { perM2: number; complex: string }[]): Stats 
   const v = rows.map((r) => r.perM2).sort((a, b) => a - b);
   if (!v.length) return { count: 0, complexes: 0, medianPerM2: null, meanPerM2: null, p25PerM2: null, p75PerM2: null, minPerM2: null, maxPerM2: null };
   return {
-    count: v.length,
-    complexes: new Set(rows.map((r) => r.complex)).size,
-    medianPerM2: quantile(v, 0.5),
-    meanPerM2: v.reduce((a, b) => a + b, 0) / v.length,
-    p25PerM2: quantile(v, 0.25),
-    p75PerM2: quantile(v, 0.75),
-    minPerM2: v[0],
-    maxPerM2: v[v.length - 1],
+    count: v.length, complexes: new Set(rows.map((r) => r.complex)).size,
+    medianPerM2: quantile(v, 0.5), meanPerM2: v.reduce((a, b) => a + b, 0) / v.length,
+    p25PerM2: quantile(v, 0.25), p75PerM2: quantile(v, 0.75), minPerM2: v[0], maxPerM2: v[v.length - 1],
   };
 }
 
-/** 두 지수(대상·비교)의 기간 변화. 상승률 차이(%p)와 상대 종가지수 격차(%)를 따로 계산. 인과효과가 아님. */
+/** 두 지수의 기간 변화: 상승률 차이(%p)와 상대 종가지수 격차(%). 인과효과가 아님. */
 export function compareIndices(targetStart: number, targetEnd: number, compStart: number, compEnd: number) {
-  const a = safeDivide(targetEnd, targetStart);
-  const b = safeDivide(compEnd, compStart);
+  const a = safeDivide(targetEnd, targetStart), b = safeDivide(compEnd, compStart);
   const targetChangePct = a === null ? null : (a - 1) * 100;
   const comparatorChangePct = b === null ? null : (b - 1) * 100;
   const diffPp = targetChangePct === null || comparatorChangePct === null ? null : targetChangePct - comparatorChangePct;
   const rel = a === null || b === null ? null : safeDivide(a, b);
-  const relativeGapPct = rel === null ? null : (rel - 1) * 100;
-  return { targetChangePct, comparatorChangePct, diffPp, relativeGapPct };
-}
-
-/** LTV = 채권(분자) ÷ 담보가치(분모) × 100. 분모 0·미입력이면 null. */
-export function ltvPct(numeratorKrw: number | null, valueKrw: number | null): number | null {
-  const r = safeDivide(numeratorKrw, valueKrw);
-  return r === null ? null : r * 100;
+  return { targetChangePct, comparatorChangePct, diffPp, relativeGapPct: rel === null ? null : (rel - 1) * 100 };
 }
 
 export function haversineM(a: { lat: number; lng: number }, b: { lat: number; lng: number }): number {
-  const R = 6371008.8;
-  const toRad = (x: number) => (x * Math.PI) / 180;
-  const dLat = toRad(b.lat - a.lat);
-  const dLng = toRad(b.lng - a.lng);
+  const R = 6371008.8, toRad = (x: number) => (x * Math.PI) / 180;
+  const dLat = toRad(b.lat - a.lat), dLng = toRad(b.lng - a.lng);
   const h = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.sin(dLng / 2) ** 2;
   return 2 * R * Math.asin(Math.sqrt(h));
 }
 
 const monthKey = (p: DateParts) => `${p.y}-${String(p.m).padStart(2, "0")}`;
+const sortKey = (p: DateParts | null) => (p ? p.y * 400 + p.m * 32 + (p.d ?? 0) : -1);
 
 function knownAsOf(m: Milestone, asOf: DateParts): boolean | "undated" {
   const k = parseDateValue(m.announcedOn ?? null) ?? parseDateValue(m.collectedOn ?? null);
   if (!k) return "undated";
-  const before = isBefore(k, asOf);
-  if (before === null) return compareMonth(k, asOf) <= 0; // 같은 달(월 정밀도) — 기준월 내 정보로 간주
-  return before || (k.precision === "day" && asOf.precision === "day" && k.d === asOf.d && compareMonth(k, asOf) === 0);
+  const b = isBefore(k, asOf);
+  if (b === null) return compareMonth(k, asOf) <= 0;
+  return b || (compareMonth(k, asOf) === 0 && k.precision === "day" && asOf.precision === "day" && k.d === asOf.d);
 }
 
-function sortKey(p: DateParts | null): number {
-  return p ? p.y * 400 + p.m * 32 + (p.d ?? 0) : -1;
+function mode<T>(arr: T[]): T | null {
+  const m = new Map<T, number>();
+  arr.forEach((x) => m.set(x, (m.get(x) ?? 0) + 1));
+  let best: T | null = null, n = 0;
+  m.forEach((c, k) => { if (c > n) { n = c; best = k; } });
+  return best;
 }
 
-// ───────────────────────── main
+// ───────────── main
 export function runAnalysis(w: WorkingInputs): AnalysisResult {
   const asOf = parseDateValue(w.asOf)!;
   const flags: Flag[] = [];
   const missing: MissingItem[] = [];
   const area = w.property.exclusiveAreaM2 ?? null;
-  const assetSupported = w.property.assetType === "apartment";
+  const coords = w.property.coordinates ?? null;
+  const o = w.options;
 
-  const base: Pick<AnalysisResult, "engineVersion" | "inputHash" | "asOf"> = { engineVersion: ENGINE_VERSION, inputHash: hashOf(w), asOf: w.asOf };
-  const coordText = w.property.coordinates
-    ? `${w.property.coordinates.lat.toFixed(6)}, ${w.property.coordinates.lng.toFixed(6)} (${w.property.coordinates.senderVerified ? "협의체에서 확인한 좌표 — 새 앱 미검증" : "확인 여부 미표시 좌표"})`
-    : "좌표 미입력";
+  if (!coords) missing.push({ field: "property.coordinates", label: "본건 좌표", affects: "비교단지·입지 사건까지 거리(주소 자동 변환 미설정 시 직접 입력)" });
+  if (!area) missing.push({ field: "property.exclusiveAreaM2", label: "전용면적", affects: "유사면적 비교·세대당 검토가격의 ㎡당 환산(가격 판단 보류)" });
+  if (!w.reviewPrice) missing.push({ field: "reviewPrice", label: "검토가격", affects: "검토가격과 실거래 비교(시세 수준만 표시)" });
+  if (!w.transactions.length) missing.push({ field: "transactions", label: "인근 실거래", affects: "비교단지·시세 수준(공공데이터 키 미설정 시 CSV로 추가)" });
+  if (!w.events.length) missing.push({ field: "events", label: "입지 사건", affects: "입지 변화 정리" });
 
-  if (!assetSupported) {
-    const msg = `현재 아파트만 지원합니다. 받은 자산유형(${LABELS.assetType[w.property.assetType]})에는 아파트 분석을 적용하지 않았습니다. 받은 허용 입력 사본은 임시 보관되며 직접 삭제하거나 파일로 내보낼 수 있습니다.`;
-    return {
-      ...base, assetSupported, unsupportedMessage: msg, missing: [],
-      property: { exclusiveAreaM2: area, exclusivePyeong: area ? m2ToPyeong(area) : null, coordinatesText: coordText },
-      prices: [], events: [], comps: null, indexComparisons: [],
-      supply: { rows: [], stageCounts: {}, overlappingHouseholds: 0, text: "미적용" },
-      causalEffect: { status: "notEstimated", text: "미추정" },
-      stress: { priceDeclinePct: null, stressedValueKrw: null, disposal: null },
-      ltv: { status: "notComputable", reasons: ["지원하지 않는 자산유형"], definition: null, seniorText: null, numeratorOwnKrw: null, numeratorCombinedKrw: null, valueLabel: null, valueBasisDate: null, debtBasisDate: null, rows: [], note: "" },
-      flags: [{ level: "high", area: "data", text: msg }],
-      summary: { location: [], price: { observed: "미적용", comparison: "미적용", causal: "미추정", stress: "미적용", evidence: "미적용" }, uncertainties: [{ level: "high", area: "data", text: msg }] },
-    };
-  }
-
-  // ── 누락 항목(해당 기능만 보완 안내)
-  if (!w.property.displayName) missing.push({ field: "property.displayName", label: "표시명", affects: "화면 표시만(분석 영향 없음)" });
-  if (!area) missing.push({ field: "property.exclusiveAreaM2", label: "전용면적", affects: "㎡·평당 단가, 비교거래 면적 필터" });
-  if (!w.property.coordinates) missing.push({ field: "property.coordinates", label: "좌표", affects: "입지 사건까지 직선거리, 지도" });
-  if (!w.prices.length) missing.push({ field: "selectedPrices.prices", label: "제시 가격", affects: "비교거래 대비 차이, 가격 참고계산" });
-  if (!w.schedule.maturity) missing.push({ field: "schedule.maturity", label: "만기", affects: "입지 일정과 만기 비교" });
-  if (!w.schedule.saleStart) missing.push({ field: "schedule.saleStart", label: "분양 시점", affects: "분양 시점 대비 일정·공급 시기 비교" });
-  if (!w.events.length) missing.push({ field: "events", label: "입지 사건", affects: "입지 변화 확인 전체" });
-  if (!w.transactions.length) missing.push({ field: "transactions", label: "비교거래", affects: "가격 비교·관찰 변화" });
-
-  // ── 가격 정규화
-  const prices: PriceResult[] = w.prices.map((p) => {
-    const krw = toKrw(p.amount, p.unit);
-    const r: PriceResult = {
-      key: p.key, kind: p.kind, label: LABELS.priceKind[p.kind],
-      input: `${p.amount.toLocaleString("ko-KR")}${LABELS.moneyUnit[p.unit]} (${LABELS.priceBasis[p.basis]})`,
-      dataMode: p.dataMode, basisDate: p.basisDate ?? "기준일 미입력",
-      unit: krw === null ? null : deriveUnitPrices(krw, p.basis, area, w.property.totalExclusiveAreaM2),
-    };
-    if (krw === null) r.error = "금액 환산 불가";
-    if (!p.basisDate) flags.push({ level: "low", area: "price", text: `${r.label} 기준일 미입력` });
-    return r;
-  });
-  const proposed = prices.find((p) => p.kind === "proposedSalePrice" && p.unit?.perM2Krw != null);
-  const proposedPerM2 = proposed?.unit?.perM2Krw ?? null;
-
-  // ── 입지 사건
   const evByKey = new Map(w.evidence.map((e) => [e.key, e]));
-  const maturity = parseDateValue(w.schedule.maturity);
-  const delay = w.scenario.eventDelayMonths ?? null;
-  const events: EventResult[] = w.events.map((ev) => {
-    const timeline = ev.milestones.map((m) => {
-      const k = knownAsOf(m, asOf);
-      return {
-        key: m.key, type: MILESTONE_LABEL[m.type], status: m.status === "actual" ? "실제" : "예정",
-        date: m.date ?? "미입력", announcedOn: m.announcedOn ?? "미입력", collectedOn: m.collectedOn ?? "미입력",
-        knownAsOf: k !== false, note: m.note, _m: m, _undated: k === "undated",
-      };
-    });
-    const known = timeline.filter((t) => t.knownAsOf).map((t) => t._m);
-    const excludedAfterAsOf = timeline.filter((t) => !t.knownAsOf).length;
-    const undatedKnowledge = timeline.filter((t) => t._undated).length;
-    if (excludedAfterAsOf) flags.push({ level: "medium", area: "data", text: `${ev.name}: 분석 기준일 이후 알려진 일정 ${excludedAfterAsOf}건은 입력에서 제외(과거 시점 재현 한계)` });
-    if (undatedKnowledge) flags.push({ level: "low", area: "data", text: `${ev.name}: 발표일·수집일이 없는 일정 ${undatedKnowledge}건 — 기준일 시점 인지 여부 확인 필요` });
+  const events: EventResult[] = w.events.map((ev) => analyzeEvent(ev, w, asOf, coords, evByKey, flags));
+  const market = analyzeMarket(w, asOf, area, coords, flags);
+  const price = comparePrice(w, area, market, flags);
+  const observed = observeChange(w, asOf, events, market, flags);
 
-    const byAnn = (a: Milestone, b: Milestone) => sortKey(parseDateValue(a.announcedOn ?? a.collectedOn ?? null)) - sortKey(parseDateValue(b.announcedOn ?? b.collectedOn ?? null));
-    const announcements = known.filter((m) => m.type === "announcement").sort(byAnn);
-    const announcement = parseDateValue(announcements[0]?.date ?? announcements[0]?.announcedOn ?? null);
-    const openingMs = known.filter((m) => m.type === "opening" || m.type === "delay").sort(byAnn);
-    const initialOpening = parseDateValue(openingMs.find((m) => m.type === "opening")?.date ?? null);
-    const latest = [...openingMs].reverse().find((m) => parseDateValue(m.date ?? null));
-    const actualOpening = known.find((m) => m.type === "opening" && m.status === "actual" && parseDateValue(m.date ?? null));
-    const expectedOpening = parseDateValue((actualOpening ?? latest)?.date ?? null);
-    const expectedOpeningStatus = expectedOpening ? (actualOpening ? "actual" : "planned") : null;
-    const cancelled = known.some((m) => m.type === "cancellation");
-    const delayCount = known.filter((m) => m.type === "delay").length;
-    const actuals = known.filter((m) => m.status === "actual").sort((a, b) => sortKey(parseDateValue(a.date ?? null)) - sortKey(parseDateValue(b.date ?? null)));
-    const stageAsOf = cancelled ? "취소" : actuals.length ? `${MILESTONE_LABEL[actuals[actuals.length - 1].type]} 완료` : known.length ? "계획·예정 단계" : "기준일 현재 확인된 일정 없음";
-
-    const scheduleGaps: ScheduleGap[] = [];
-    if (expectedOpening && ev.category !== "supply") {
-      const pairs: [ScheduleGap["against"], string][] = [["saleStart", "분양"], ["completion", "준공"], ["maturity", "만기"], ["expectedDisposal", "예상 처분"]];
-      for (const [k, label] of pairs) {
-        const d = parseDateValue(w.schedule[k] ?? null);
-        if (!d) continue;
-        const months = monthDiff(d, expectedOpening);
-        scheduleGaps.push({ against: k, label, months, text: months > 0 ? `${label}보다 ${months}개월 뒤` : months < 0 ? `${label}보다 ${-months}개월 앞` : `${label}과 같은 달` });
-      }
-    }
-    let delayedScenario: EventResult["delayedScenario"] = null;
-    if (expectedOpening && expectedOpeningStatus === "planned" && delay && ev.category !== "supply") {
-      const op = addMonths(expectedOpening, delay);
-      delayedScenario = { delayMonths: delay, opening: op, gapToMaturity: maturity ? monthDiff(maturity, op) : null };
-    }
-    let maturityNote: string | null = null;
-    const gm = scheduleGaps.find((g) => g.against === "maturity");
-    if (gm && gm.months > 0) {
-      maturityNote = `개통·개장 예정이 만기보다 ${gm.months}개월 뒤임. 실제 이용 편익은 만기 이후 발생하나, 현재 가격에 기대가 반영됐는지는 별도 검토 대상(영향을 0으로 단정하지 않음).`;
-      flags.push({ level: "high", area: "schedule", text: `${ev.name}: ${maturityNote}` });
-    }
-    if (delayedScenario?.gapToMaturity != null && delayedScenario.gapToMaturity > 0 && !(gm && gm.months > 0)) {
-      flags.push({ level: "medium", area: "schedule", text: `${ev.name}: 지연 ${delayedScenario.delayMonths}개월 가정 시 만기보다 ${delayedScenario.gapToMaturity}개월 뒤` });
-    }
-    if (cancelled) flags.push({ level: "high", area: "location", text: `${ev.name}: 취소 이력 있음` });
-    if (delayCount) flags.push({ level: "medium", area: "location", text: `${ev.name}: 일정 지연 ${delayCount}회 기록(최초 ${formatDateValue(initialOpening)} → 최신 ${formatDateValue(expectedOpening)})` });
-
-    // 접근성 — 직선거리와 실제 보행경로를 구분. 경로 자료 없이 보행시간을 만들지 않는다.
-    const straight = w.property.coordinates && ev.location ? haversineM(w.property.coordinates, ev.location) : null;
-    const walk = ev.access?.routeWalkMinutes ?? null;
-    const accessText = [
-      straight === null ? "직선거리 미산출(좌표 부족)" : `직선거리 약 ${Math.round(straight).toLocaleString("ko-KR")}m`,
-      walk === null ? "경로 자료 없음 — 보행시간 미산출" : `보행 ${walk}분(${ev.access?.routeSource ?? "출처 미기재"}${ev.access?.routeCheckedOn ? `, ${ev.access.routeCheckedOn} 확인` : ""})`,
-    ].join(" · ");
-
-    const evs = ev.evidenceKeys.map((k) => evByKey.get(k)).filter(Boolean) as WorkingInputs["evidence"];
-    const byStatus = { confirmed: 0, needsApplicability: 0, inconsistent: 0, hardToVerify: 0 } as Record<EvidenceStatus, number>;
-    evs.forEach((e) => byStatus[e.status]++);
-    const confirmedOfficial = byStatus.confirmed > 0;
-    if (!confirmedOfficial) flags.push({ level: ev.category === "supply" ? "medium" : "high", area: ev.category === "supply" ? "supply" : "location", text: `${ev.name}: 공식 자료로 ‘확인된 사실’ 근거 없음` });
-    if (byStatus.inconsistent) flags.push({ level: "medium", area: "location", text: `${ev.name}: 자료 간 불일치 ${byStatus.inconsistent}건` });
-    if (ev.dataMode === "demo") flags.push({ level: "low", area: "data", text: `${ev.name}: 가상 자료` });
-
-    return {
-      key: ev.key, name: ev.name, category: ev.category, categoryLabel: EVENT_CATEGORY_LABEL[ev.category], direction: ev.direction, dataMode: ev.dataMode,
-      stageAsOf, cancelled, announcement, initialOpening, expectedOpening, expectedOpeningStatus, delayCount,
-      timeline: timeline.map(({ _m, _undated, ...t }) => t), excludedAfterAsOf, undatedKnowledge,
-      scheduleGaps, delayedScenario, maturityNote,
-      access: { straightDistanceM: straight, walkMinutes: walk, text: accessText },
-      evidence: { total: evs.length, byStatus, confirmedOfficial },
-      prepricing: null,
-    };
-  });
-
-  // ── 비교거래
-  const comps = analyzeComps(w, asOf, area, proposedPerM2, events, flags);
-
-  // ── 선반영 검토(사건별)
-  const appraisal = w.prices.find((p) => p.kind === "appraisalValue");
-  const appraisalDate = parseDateValue(appraisal?.basisDate ?? null);
+  // 선반영 가능성
+  const priceDate = parseDateValue(w.reviewPrice?.basisDate ?? null);
+  const txByKey = new Map(w.transactions.map((t) => [t.key, t]));
+  const poolRows = market.txRows.filter((r) => r.included);
   for (const er of events) {
     if (er.category === "supply") continue;
-    if (!er.announcement) {
-      er.prepricing = { announcement: "미확인", appraisalBasisDate: appraisal?.basisDate ?? "미입력", appraisalAfterAnnouncement: null, compsAfterAnnouncementShare: null, assessment: "notApplicable", quantification: "정량 분리 어려움", text: "발표일이 확인되지 않아 선반영 검토 불가" };
-      continue;
-    }
-    const after = appraisalDate ? isBefore(er.announcement, appraisalDate) : null;
-    let share: number | null = null;
-    if (comps) {
-      const inc = comps.rows.filter((r) => r.included && r.group === "target");
-      const tx = new Map(w.transactions.map((t) => [t.key, t]));
-      const afterCount = inc.filter((r) => {
-        const d = parseDateValue(tx.get(r.key)!.contractDate);
-        return d && compareMonth(d, er.announcement!) >= 0;
-      }).length;
-      share = inc.length ? afterCount / inc.length : null;
-    }
+    if (!er.announcement) { er.prepricing = { text: "발표일 미확인 — 선반영 검토 불가", assessment: "notApplicable", shareAfter: null, quantification: "정량 분리 어려움" }; continue; }
+    const after = priceDate ? isBefore(er.announcement, priceDate) : null;
+    const afterCount = poolRows.filter((r) => { const d = parseDateValue(txByKey.get(r.key)!.contractDate); return d && compareMonth(d, er.announcement!) >= 0; }).length;
+    const share = poolRows.length ? afterCount / poolRows.length : null;
     const possible = after === true || (share !== null && share > 0);
-    const parts = [
-      `발표 ${formatDateValue(er.announcement)}`,
-      appraisalDate ? `평가 기준일 ${formatDateValue(appraisalDate)}${after === true ? "(발표 이후)" : after === false ? "(발표 이전)" : "(같은 달 — 선후 판단 불가)"}` : "평가 기준일 미입력",
-      share === null ? "비교거래 시점 분포 미산출" : `포함 비교거래 중 발표 이후 계약 ${fmtPct(share * 100, 0)}`,
-      w.appraisalNote ? "평가서 설명 입력됨(내용 대조 필요)" : "평가서의 해당 기대 반영 설명 미입력",
-    ];
     er.prepricing = {
-      announcement: formatDateValue(er.announcement), appraisalBasisDate: appraisal?.basisDate ?? "미입력",
-      appraisalAfterAnnouncement: after, compsAfterAnnouncementShare: share,
-      assessment: possible ? "possible" : "unclear", quantification: "정량 분리 어려움",
-      text: `${parts.join(" · ")}. ${possible ? "현재 가격·평가액에 기대가 일부 반영됐을 가능성이 있음" : "반영 여부 판단 근거 부족"}. 반영 정도는 정량 분리 어려움(발표 후 거래라는 사실만으로 전부 반영됐다고 보지 않음).`,
+      assessment: possible ? "possible" : "unclear", shareAfter: share, quantification: "정량 분리 어려움",
+      text: [
+        `발표 ${formatDateValue(er.announcement)}`,
+        priceDate ? `검토가격 기준일 ${formatDateValue(priceDate)}${after === true ? "(발표 이후)" : after === false ? "(발표 이전)" : "(같은 달)"}` : "검토가격 기준일 미입력",
+        share === null ? "비교거래 없음" : `대표 비교단지 최근 거래 중 발표 이후 계약 ${fmtPct(share * 100, 0)}`,
+        w.appraisalNote ? "가격 근거 문서의 설명 입력됨" : "가격 근거 문서의 반영 설명 미입력",
+      ].join(" · ") + `. ${possible ? "발표 이후 거래·가격이 있어 기대가 일부 반영됐을 가능성이 있음" : "반영 여부를 판단할 근거 부족"}. 반영 정도는 정량 분리 어려움.`,
     };
-    if (possible) flags.push({ level: "medium", area: "price", text: `${er.name}: 가격 선반영 가능성 — 정량 분리 어려움` });
   }
 
-  // ── 지수 비교(사용자 입력)
-  const indexComparisons: IndexComparisonResult[] = w.indexComparisons.map((ic) => {
-    const r = compareIndices(ic.targetStart, ic.targetEnd, ic.comparatorStart, ic.comparatorEnd);
-    return {
-      key: ic.key, label: ic.label, source: ic.source, dataMode: ic.dataMode, ...r,
-      text: `관찰 비교: 대상 ${fmtPct(r.targetChangePct)} vs 비교 ${fmtPct(r.comparatorChangePct)} → 상승률 차이 ${fmtPp(r.diffPp)}, 상대 종가지수 격차 ${fmtPct(r.relativeGapPct, 4)}. 인과효과가 아닌 관찰된 차이임.`,
-    };
-  });
+  const supply = analyzeSupply(w, asOf, area, flags);
+  if (w.transactions.some((t) => t.dataMode === "demo") || w.events.some((e) => e.dataMode === "demo")) flags.push({ level: "high", area: "data", text: "가상 자료가 포함됨 — 실제 판단에 사용 불가" });
 
-  // ── 경쟁 공급
-  const supply = analyzeSupply(w, asOf, area, proposedPerM2, flags);
-
-  // ── 스트레스(사용자 가정) & LTV 참고
-  const decline = w.scenario.priceDeclinePct ?? null;
-  const ltv = computeLtv(w, decline);
-  if (ltv.status === "notComputable" && w.debt) flags.push({ level: "low", area: "ltv", text: `LTV 참고계산 미산출: ${ltv.reasons.join(", ")}` });
-  const valueEntry = w.prices.find((p) => p.kind === w.ltvChecks.valueKind && p.basis === "project");
-  const valueKrw = valueEntry ? toKrw(valueEntry.amount, valueEntry.unit) : null;
-  const stressedValueKrw = decline !== null && valueKrw !== null ? valueKrw * (1 - decline / 100) : null;
-  let disposal: AnalysisResult["stress"]["disposal"] = null;
-  const disp = parseDateValue(w.schedule.expectedDisposal);
-  if (disp) {
-    const dm = w.scenario.disposalDelayMonths ?? null;
-    const delayed = dm ? addMonths(disp, dm) : null;
-    const gap = maturity ? monthDiff(maturity, delayed ?? disp) : null;
-    disposal = {
-      base: formatDateValue(disp), delayMonths: dm, delayed: delayed ? formatDateValue(delayed) : null, gapToMaturityMonths: gap,
-      text: gap === null ? "만기 미입력 — 비교 불가" : gap > 0 ? `${dm ? "지연 가정 시 " : ""}예상 처분이 만기보다 ${gap}개월 뒤` : `${dm ? "지연 가정 시에도 " : ""}예상 처분이 만기 ${gap === 0 ? "같은 달" : `${-gap}개월 전`}`,
-    };
-    if (gap !== null && gap > 0) flags.push({ level: "medium", area: "schedule", text: `일정 가정: ${disposal.text}` });
-  }
-
-  if (prices.some((p) => p.dataMode === "demo") || w.transactions.some((t) => t.dataMode === "demo")) flags.push({ level: "high", area: "data", text: "가상 자료가 포함됨 — 실제 판단에 사용 불가" });
-
-  // ── 요약 3블록
   const order: Record<Level, number> = { high: 0, medium: 1, low: 2 };
   flags.sort((a, b) => order[a.level] - order[b.level]);
-  const summaryLocation = events
-    .filter((e) => e.category !== "supply")
-    .map((e) => ({
-      key: e.key,
-      text: `${e.name} (${e.categoryLabel}) — ${e.stageAsOf}${e.expectedOpening ? `, ${e.expectedOpeningStatus === "actual" ? "개통·개장" : "개통·개장 예정"} ${formatDateValue(e.expectedOpening)}` : ""}`,
-      detail: [e.evidence.confirmedOfficial ? `근거: 확인된 사실 ${e.evidence.byStatus.confirmed}건` : "근거: 공식 확인 안 됨", e.scheduleGaps.find((g) => g.against === "maturity")?.text ? `만기 대비 ${e.scheduleGaps.find((g) => g.against === "maturity")!.text}` : null, e.access.text, e.dataMode === "demo" ? "가상 자료" : null].filter(Boolean).join(" · "),
-    }));
-  if (supply.rows.length) summaryLocation.push({ key: "supply", text: `경쟁 공급 ${supply.rows.length}건 — ${supply.text}`, detail: "" });
 
-  const observedText = comps?.observed.sampleSufficient && comps.observed.targetChangePct !== null
-    ? `관찰된 변화: 본건 권역 중위 ㎡당 단가 ${fmtPct(comps.observed.targetChangePct)}${comps.observed.comparatorChangePct !== null ? `, 비교 권역 ${fmtPct(comps.observed.comparatorChangePct)}` : ""} (사건 전후, 표본 ${comps.target.pre.count}/${comps.target.post.count}건 — 인과효과 아님)`
-    : indexComparisons[0]
-      ? `관찰된 변화(입력 지수): 대상 ${fmtPct(indexComparisons[0].targetChangePct)}, 비교 ${fmtPct(indexComparisons[0].comparatorChangePct)}`
-      : "관찰된 변화: 미산출(전후 비교 표본 부족 또는 자료 없음)";
-  const comparisonText = [
-    comps?.observed.diffPp != null && comps.observed.sampleSufficient ? `비교대상과의 차이: 상승률 차이 ${fmtPp(comps.observed.diffPp)}` : indexComparisons[0]?.diffPp != null ? `비교대상과의 차이(입력 지수): ${fmtPp(indexComparisons[0].diffPp)}` : "비교대상과의 차이: 미산출",
-    comps?.proposedComparison.diffPct != null ? `제시 분양가 ㎡당 단가는 포함 비교거래 중위값 대비 ${fmtPp(comps.proposedComparison.diffPct).replace("%p", "%")}` : "제시가격 비교: 미산출",
-  ].join(" / ");
-  const evidenceText = events.length
-    ? `공식 확인 근거가 있는 사건 ${events.filter((e) => e.evidence.confirmedOfficial).length}/${events.length}건${comps ? `, 비교거래 포함 ${comps.target.all.count + comps.comparator.all.count}건(${comps.dataModes.map((m) => DATA_MODE_LABEL[m]).join("·") || "자료 없음"})` : ""}`
-    : "입지 사건 미입력";
+  const summaryLocation = events.filter((e) => e.category !== "supply").map((e) => ({
+    key: e.key,
+    text: `[${e.categoryLabel}] ${e.name} — ${e.stageAsOf}${e.expectedTarget ? `, ${e.expectedTargetStatus === "actual" ? "완료" : "예정"} ${formatDateValue(e.expectedTarget)}` : ""}`,
+    detail: [
+      e.evidence.confirmedOfficial ? `공식 확인 ${e.evidence.byStatus.confirmed}건` : "공식 자료 미확인",
+      e.delayCount ? `지연 ${e.delayCount}회` : null,
+      ...e.scheduleGaps.map((g) => g.text),
+      e.access.text,
+      e.dataMode === "demo" ? "가상 자료" : null,
+    ].filter(Boolean).join(" · "),
+  }));
+  if (supply.rows.length) summaryLocation.push({ key: "supply", text: `[주변 입주 물량] ${supply.rows.length}건 — ${supply.text}`, detail: supply.rows.map((s) => `${s.name}(${s.stage}${s.households ? `, ${s.households.toLocaleString("ko-KR")}세대` : ""})`).join(" · ") });
+
+  const comparablesText = market.comparables.length
+    ? `대표 비교단지 ${market.comparables.length}개(최근 ${o.recentMonths}개월 ${area ? "유사면적 " : ""}거래 ${market.pooled.count}건, 중위 ${fmtMan(market.pooled.medianPerM2)}/전용㎡)`
+    : "비교 가능한 단지 없음 — 대표 비교단지를 억지로 채우지 않음";
+  const firstPre = events.find((e) => e.prepricing && e.prepricing.assessment !== "notApplicable");
 
   return {
-    ...base, assetSupported, missing,
-    property: { exclusiveAreaM2: area, exclusivePyeong: area ? m2ToPyeong(area) : null, coordinatesText: coordText },
-    prices, events, comps, indexComparisons, supply,
-    causalEffect: { status: "notEstimated", text: "미추정 — 검증된 통계 모델을 적용하지 않았으므로 입지 변화의 인과적 가격효과를 추정하지 않음" },
-    stress: { priceDeclinePct: decline, stressedValueKrw, disposal },
-    ltv, flags,
+    engineVersion: ENGINE_VERSION, inputHash: hashOf(w), asOf: w.asOf, missing,
+    property: {
+      address: w.property.address, exclusiveAreaM2: area, exclusivePyeong: area ? m2ToPyeong(area) : null, buildYear: w.property.buildYear ?? null,
+      coordinatesText: coords ? `${coords.lat.toFixed(6)}, ${coords.lng.toFixed(6)} (${coords.source})` : "좌표 미입력",
+    },
+    events, market, price, observed, supply,
+    causalEffect: { status: "notEstimated", text: "미추정 — 검증된 통계 모델을 적용하지 않아 입지 변화의 인과적 가격효과를 추정하지 않음" },
+    flags,
     summary: {
       location: summaryLocation,
       price: {
-        observed: observedText,
-        comparison: comparisonText,
+        comparison: price.text,
+        comparables: comparablesText,
+        observed: observed.text,
+        prepricing: firstPre?.prepricing ? `${firstPre.name}: ${firstPre.prepricing.assessment === "possible" ? "선반영 가능성 있음" : "판단 근거 부족"}(정량 분리 어려움)` : "선반영: 검토할 발표일 자료 없음",
         causal: "인과 추정 효과: 미추정",
-        stress: decline !== null ? `사용자 스트레스 가정: 가격 ${decline}% 하락${w.scenario.eventDelayMonths ? `, 사건 지연 ${w.scenario.eventDelayMonths}개월` : ""}${w.scenario.disposalDelayMonths ? `, 처분 지연 ${w.scenario.disposalDelayMonths}개월` : ""} (전망 아님)` : "사용자 스트레스 가정: 미입력",
-        evidence: evidenceText,
+        basis: `기준일 ${w.asOf} · 금액 만원 · 면적 전용㎡ · 출처 ${market.sources.length ? market.sources.join(", ") : "거래 자료 없음"}`,
       },
-      uncertainties: flags.filter((f) => f.level !== "low").slice(0, 6),
+      uncertainties: flags.filter((f) => f.level !== "low").slice(0, 7),
     },
   };
 }
 
-function analyzeComps(w: WorkingInputs, asOf: DateParts, area: number | null, proposedPerM2: number | null, events: EventResult[], flags: Flag[]): CompsResult | null {
-  if (!w.transactions.length) return null;
-  const anchorEv = events.find((e) => e.key === w.options.anchorEventKey && e.announcement) ?? events.find((e) => e.category !== "supply" && e.announcement);
-  const anchor = anchorEv ? { label: `${anchorEv.name} 발표`, date: anchorEv.announcement! } : { label: "분석 기준일(사건 발표일 미확인)", date: asOf };
-  const before = w.options.comparisonMonthsBefore;
-  const after = w.options.comparisonMonthsAfter;
-  const start = addMonths({ ...anchor.date, precision: "month", d: undefined, raw: "" }, -before);
-  let end = addMonths({ ...anchor.date, precision: "month", d: undefined, raw: "" }, after);
-  let capped = false;
-  if (compareMonth(end, asOf) > 0) {
-    end = { raw: monthKey(asOf), precision: "month", y: asOf.y, m: asOf.m };
-    capped = true;
-  }
-  const band = area ? { minM2: area * (1 - w.options.areaBandPct / 100), maxM2: area * (1 + w.options.areaBandPct / 100) } : null;
-  if (!band) flags.push({ level: "medium", area: "price", text: "전용면적 미입력 — 비교거래 면적 필터 미적용" });
+function analyzeEvent(ev: LocationEvent, w: WorkingInputs, asOf: DateParts, coords: { lat: number; lng: number } | null, evByKey: Map<string, WorkingInputs["evidence"][number]>, flags: Flag[]): EventResult {
+  const timeline = ev.milestones.map((m) => {
+    const k = knownAsOf(m, asOf);
+    return { key: m.key, type: MILESTONE_LABEL[m.type], status: m.status === "actual" ? "실제" : "예정", date: m.date ?? "미입력", announcedOn: m.announcedOn ?? "미입력", collectedOn: m.collectedOn ?? "미입력", knownAsOf: k !== false, note: m.note, _m: m, _u: k === "undated" };
+  });
+  const known = timeline.filter((t) => t.knownAsOf).map((t) => t._m);
+  const excludedAfterAsOf = timeline.filter((t) => !t.knownAsOf).length;
+  const undatedKnowledge = timeline.filter((t) => t._u).length;
+  if (excludedAfterAsOf) flags.push({ level: "low", area: "data", text: `${ev.name}: 분석 기준일 이후 알려진 일정 ${excludedAfterAsOf}건 제외(과거 시점 재현 한계)` });
+  if (undatedKnowledge) flags.push({ level: "low", area: "data", text: `${ev.name}: 발표일·수집일 없는 일정 ${undatedKnowledge}건` });
 
-  const exclusionCounts: Record<string, number> = {};
-  const rows: CompsResult["rows"] = w.transactions.map((t: Transaction) => {
+  const byAnn = (a: Milestone, b: Milestone) => sortKey(parseDateValue(a.announcedOn ?? a.collectedOn ?? null)) - sortKey(parseDateValue(b.announcedOn ?? b.collectedOn ?? null));
+  const anns = known.filter((m) => m.type === "announcement").sort(byAnn);
+  const announcement = parseDateValue(anns[0]?.date ?? anns[0]?.announcedOn ?? null);
+  const targetTypes = ev.category === "supply" ? ["occupancy", "delay"] : ["opening", "delay"];
+  const tms = known.filter((m) => targetTypes.includes(m.type)).sort(byAnn);
+  const initialTarget = parseDateValue(tms.find((m) => m.type !== "delay")?.date ?? null);
+  const latest = [...tms].reverse().find((m) => parseDateValue(m.date ?? null));
+  const actual = known.find((m) => targetTypes.includes(m.type) && m.type !== "delay" && m.status === "actual" && parseDateValue(m.date ?? null));
+  let expectedTarget = parseDateValue((actual ?? latest)?.date ?? null);
+  if (!expectedTarget && ev.category === "supply") expectedTarget = parseDateValue(ev.supply?.occupancyDate ?? null);
+  const expectedTargetStatus = expectedTarget ? (actual ? "actual" : "planned") : null;
+  const cancelled = known.some((m) => m.type === "cancellation");
+  const delayCount = known.filter((m) => m.type === "delay").length;
+  const actuals = known.filter((m) => m.status === "actual").sort((a, b) => sortKey(parseDateValue(a.date ?? null)) - sortKey(parseDateValue(b.date ?? null)));
+  const stageAsOf = cancelled ? "취소" : actuals.length ? `${MILESTONE_LABEL[actuals[actuals.length - 1].type]} 완료` : known.length ? "계획·예정 단계" : ev.supply ? `${SUPPLY_STAGE_LABEL[ev.supply.stage]} 단계` : "기준일 현재 확인된 일정 없음";
+
+  const scheduleGaps: EventResult["scheduleGaps"] = [];
+  if (expectedTarget) {
+    for (const [k, label] of [["saleStart", "분양"], ["completion", "준공"]] as const) {
+      const d = parseDateValue(w.schedule[k] ?? null);
+      if (!d) continue;
+      const months = monthDiff(d, expectedTarget);
+      scheduleGaps.push({ against: k, label, months, text: months > 0 ? `본건 ${label}보다 ${months}개월 뒤` : months < 0 ? `본건 ${label}보다 ${-months}개월 앞` : `본건 ${label}과 같은 달` });
+    }
+  }
+  if (cancelled) flags.push({ level: "high", area: "location", text: `${ev.name}: 취소 이력` });
+  if (delayCount) flags.push({ level: "high", area: "location", text: `${ev.name}: 계획 지연 ${delayCount}회(최초 ${formatDateValue(initialTarget)} → 최신 ${formatDateValue(expectedTarget)})` });
+  const gc = scheduleGaps.find((g) => g.against === "completion");
+  if (gc && gc.months > 0 && ev.category !== "supply") flags.push({ level: "medium", area: "location", text: `${ev.name}: 본건 준공보다 ${gc.months}개월 뒤 완료 예정 — 실제 이용 편익은 그 이후 발생하며 현재 가격 반영 여부는 별도 검토(영향을 0으로 단정하지 않음)` });
+
+  const straight = coords && ev.location ? haversineM(coords, ev.location) : null;
+  const walk = ev.access?.routeWalkMinutes ?? null;
+  const accessText = [
+    straight === null ? "직선거리 미산출(좌표 부족)" : `직선거리 약 ${Math.round(straight).toLocaleString("ko-KR")}m`,
+    ev.category === "supply" ? null : walk === null ? "보행 경로 자료 없음 — 보행시간 미산출" : `보행 ${walk}분(${ev.access?.routeSource ?? "출처 미기재"})`,
+  ].filter(Boolean).join(" · ");
+
+  const evs = ev.evidenceKeys.map((k) => evByKey.get(k)).filter(Boolean) as WorkingInputs["evidence"];
+  const byStatus = { confirmed: 0, needsApplicability: 0, inconsistent: 0, hardToVerify: 0 } as Record<EvidenceStatus, number>;
+  evs.forEach((e) => byStatus[e.status]++);
+  const confirmedOfficial = byStatus.confirmed > 0;
+  if (!confirmedOfficial) flags.push({ level: ev.category === "supply" ? "medium" : "high", area: ev.category === "supply" ? "supply" : "location", text: `${ev.name}: 공식 자료로 확인된 근거 없음` });
+  if (byStatus.inconsistent) flags.push({ level: "medium", area: "location", text: `${ev.name}: 자료 간 불일치 ${byStatus.inconsistent}건` });
+
+  return {
+    key: ev.key, name: ev.name, category: ev.category, categoryLabel: EVENT_CATEGORY_LABEL[ev.category], direction: ev.direction, dataMode: ev.dataMode,
+    stageAsOf, cancelled, announcement, initialTarget, expectedTarget, expectedTargetStatus, delayCount,
+    timeline: timeline.map(({ _m, _u, ...t }) => t), excludedAfterAsOf, undatedKnowledge, scheduleGaps,
+    access: { straightDistanceM: straight, walkMinutes: walk, text: accessText },
+    evidence: { total: evs.length, byStatus, confirmedOfficial }, prepricing: null,
+  };
+}
+
+function analyzeMarket(w: WorkingInputs, asOf: DateParts, area: number | null, coords: { lat: number; lng: number } | null, flags: Flag[]): MarketResult {
+  const o = w.options;
+  const asOfMonth: DateParts = { raw: monthKey(asOf), precision: "month", y: asOf.y, m: asOf.m };
+  const start = addMonths(asOfMonth, -(o.recentMonths - 1));
+  const band = area ? { minM2: area * (1 - o.areaBandPct / 100), maxM2: area * (1 + o.areaBandPct / 100) } : null;
+  const excludedTrades: Record<string, number> = {};
+  const infoByKey = new Map(w.complexInfo.map((c) => [c.complexKey, c]));
+
+  const txRows = w.transactions.map((t: Transaction) => {
     const reasons: string[] = [];
     const d = parseDateValue(t.contractDate);
     if (t.cancelled) reasons.push("해제(취소) 거래");
     if (!d) reasons.push("계약일 형식 오류");
     else {
-      if (compareMonth(d, start) < 0 || compareMonth(d, end) > 0) reasons.push("비교기간 외");
-      const ba = isBefore(asOf, d);
-      if (ba === true) reasons.push("분석 기준일 이후 계약");
+      if (isBefore(asOf, d) === true) reasons.push("분석 기준일 이후 계약");
+      else if (compareMonth(d, start) < 0) reasons.push(`최근 ${o.recentMonths}개월 이전`);
     }
-    if (!(t.exclusiveAreaM2 > 0)) reasons.push("전용면적 미입력");
-    else if (band && (t.exclusiveAreaM2 < band.minM2 || t.exclusiveAreaM2 > band.maxM2)) reasons.push("면적 범위 외");
-    if (!(t.priceKrw > 0)) reasons.push("가격 미입력");
+    if (!(t.exclusiveAreaM2 > 0) || !(t.priceKrw > 0)) reasons.push("면적·금액 미입력");
+    else if (band && (t.exclusiveAreaM2 < band.minM2 || t.exclusiveAreaM2 > band.maxM2)) reasons.push("유사면적 범위 외");
     if (t.manualExclusion) reasons.push(`사용자 제외: ${t.manualExclusion}`);
-    reasons.forEach((r) => { const k = r.startsWith("사용자 제외") ? "사용자 제외" : r; exclusionCounts[k] = (exclusionCounts[k] ?? 0) + 1; });
-    const perM2 = t.exclusiveAreaM2 > 0 && t.priceKrw > 0 ? t.priceKrw / t.exclusiveAreaM2 : null;
-    let period: "pre" | "post" | "anchorMonth" | null = null;
-    if (d) {
-      const cm = compareMonth(d, anchor.date);
-      if (cm < 0) period = "pre";
-      else if (cm > 0) period = "post";
-      else {
-        const b = isBefore(d, anchor.date);
-        period = b === true ? "pre" : b === false ? "post" : "anchorMonth";
-      }
-    }
-    return { key: t.key, included: reasons.length === 0, reasons, perM2, period, group: t.group, dataMode: t.dataMode };
+    reasons.forEach((r) => { const k = r.startsWith("사용자 제외") ? "사용자 제외" : r; excludedTrades[k] = (excludedTrades[k] ?? 0) + 1; });
+    return { key: t.key, complexKey: complexKeyOf(t), included: false, reasons, perM2: t.exclusiveAreaM2 > 0 && t.priceKrw > 0 ? t.priceKrw / t.exclusiveAreaM2 : null };
   });
-  const txByKey = new Map(w.transactions.map((t) => [t.key, t]));
-  const pick = (g: "target" | "comparator", p?: "pre" | "post") =>
-    computeStats(rows.filter((r) => r.included && r.group === g && (!p || r.period === p)).map((r) => ({ perM2: r.perM2!, complex: txByKey.get(r.key)!.complexName })));
-  const target = { all: pick("target"), pre: pick("target", "pre"), post: pick("target", "post") };
-  const comparator = { all: pick("comparator"), pre: pick("comparator", "pre"), post: pick("comparator", "post") };
+  const validTrades = w.transactions.filter((t) => !t.cancelled && t.exclusiveAreaM2 > 0 && t.priceKrw > 0 && parseDateValue(t.contractDate)).length;
 
-  // 월별 분포
-  const monthly: CompsResult["monthly"] = [];
-  for (let cur = start; compareMonth(cur, end) <= 0; cur = addMonths(cur, 1)) {
-    const mk = monthKey(cur);
-    const inMonth = rows.filter((r) => r.included && monthKey(parseDateValue(txByKey.get(r.key)!.contractDate)!) === mk);
-    const tg = inMonth.filter((r) => r.group === "target");
-    monthly.push({ month: mk, target: tg.length, comparator: inMonth.length - tg.length, targetMedianPerM2: computeStats(tg.map((r) => ({ perM2: r.perM2!, complex: "" }))).medianPerM2 });
-    if (monthly.length > 600) break;
+  const groups = new Map<string, Transaction[]>();
+  w.transactions.forEach((t) => { const k = complexKeyOf(t); groups.set(k, [...(groups.get(k) ?? []), t]); });
+  const rowByKey = new Map(txRows.map((r) => [r.key, r]));
+  const complexes: ComplexResult[] = [];
+  for (const [ck, txs] of groups) {
+    const info = infoByKey.get(ck);
+    const ok = txs.filter((t) => rowByKey.get(t.key)!.reasons.length === 0);
+    const by = info?.buildYear ?? mode(txs.map((t) => t.buildYear).filter((x): x is number => !!x));
+    const loc = info?.location;
+    const dist = info?.distanceM ?? (coords && loc ? haversineM(coords, loc) : null);
+    const stats = computeStats(ok.map((t) => ({ perM2: t.priceKrw / t.exclusiveAreaM2, complex: ck })));
+    const dates = ok.map((t) => t.contractDate).sort();
+    const reasons: string[] = [];
+    const subjectYear = w.property.buildYear ?? null;
+    const byDiff = by && subjectYear ? by - subjectYear : null;
+    let excluded = false;
+    const forced = info?.userDecision === "include";
+    if (info?.userDecision === "exclude") { reasons.push(`사용자 제외${info.userReason ? `: ${info.userReason}` : ""}`); excluded = true; }
+    if (ok.length === 0) { reasons.push(`최근 ${o.recentMonths}개월 ${band ? "유사면적 " : ""}거래 없음`); excluded = true; }
+    else if (ok.length < o.minComplexTrades && !forced) { reasons.push(`최근 ${o.recentMonths}개월 ${band ? "유사면적 " : ""}거래 ${ok.length}건 — 표본 부족(기준 ${o.minComplexTrades}건)`); excluded = true; }
+    if (dist !== null && dist > o.radiusM && !forced) { reasons.push(`거리 약 ${Math.round(dist).toLocaleString("ko-KR")}m — 반경 ${o.radiusM.toLocaleString("ko-KR")}m 초과`); excluded = true; }
+    if (byDiff !== null && Math.abs(byDiff) > o.buildYearBand && !forced) { reasons.push(`준공연도 차이 ${Math.abs(byDiff)}년 — 기준 ${o.buildYearBand}년 초과`); excluded = true; }
+    if (dist === null) reasons.push("거리 미확인");
+    if (by === null) reasons.push("준공연도 미확인");
+    if (forced) reasons.push("사용자 포함 지정");
+    const areas = ok.map((t) => t.exclusiveAreaM2).sort((a, b) => a - b);
+    const medArea = areas.length ? areas[Math.floor(areas.length / 2)] : null;
+    complexes.push({
+      complexKey: ck, name: txs[0].complexName, dong: txs[0].dong,
+      buildYear: by, buildYearSource: info?.buildYear ? "사용자 확인" : by ? "거래 자료" : "없음",
+      distanceM: dist, distanceSource: info?.distanceM !== undefined ? (info.distanceSource ?? "사용자 입력") : dist !== null ? "좌표 간 직선거리" : "없음",
+      recentTrades: ok.length, recentAreaMin: areas.length ? areas[0] : null, recentAreaMax: areas.length ? areas[areas.length - 1] : null,
+      stats, latestTrade: dates[dates.length - 1] ?? null,
+      status: excluded ? "excluded" : "eligible", reasons, selectionReason: "",
+      differences: { buildYearDiff: byDiff, distanceM: dist, areaDiffM2: area && medArea ? medArea - area : null },
+      dataModes: [...new Set(txs.map((t) => t.dataMode))], sources: [...new Set(txs.map((t) => t.source ?? DATA_MODE_LABEL[t.dataMode]))],
+    });
   }
-  const emptyMonths = monthly.filter((m) => m.target + m.comparator === 0).length;
-  const incMonths = monthly.filter((m) => m.target + m.comparator > 0).map((m) => m.month);
-  const dataCoverage = { firstMonth: incMonths[0] ?? null, lastMonth: incMonths[incMonths.length - 1] ?? null, shortOfWindow: !incMonths.length || incMonths[0] !== monthly[0]?.month || incMonths[incMonths.length - 1] !== monthly[monthly.length - 1]?.month };
-  if (dataCoverage.shortOfWindow) flags.push({ level: "medium", area: "data", text: `비교기간(${monthKey(start)}~${monthKey(end)}) 중 실제 자료 범위 ${dataCoverage.firstMonth ?? "없음"}~${dataCoverage.lastMonth ?? "없음"} — 기간 부족, 빈 기간을 채우지 않음` });
-  if (capped) flags.push({ level: "low", area: "data", text: "사건 후 비교기간이 분석 기준일을 넘어 기준일까지로 제한됨" });
+  // 대표 비교단지: 거리 확인된 단지 우선 → 가까운 순 → 준공연도 차이 작은 순 → 거래 많은 순, 최대 5개
+  const eligible = complexes.filter((c) => c.status === "eligible").sort((a, b) =>
+    (a.distanceM === null ? 1 : 0) - (b.distanceM === null ? 1 : 0) || (a.distanceM ?? 0) - (b.distanceM ?? 0) ||
+    Math.abs(a.differences.buildYearDiff ?? 99) - Math.abs(b.differences.buildYearDiff ?? 99) || b.recentTrades - a.recentTrades);
+  const comparables = eligible.slice(0, 5);
+  comparables.forEach((c) => {
+    c.status = "selected";
+    c.selectionReason = [
+      c.distanceM !== null ? `약 ${Math.round(c.distanceM).toLocaleString("ko-KR")}m(반경 ${o.radiusM.toLocaleString("ko-KR")}m 이내)` : "거리 미확인(확인 필요)",
+      c.buildYear ? `준공 ${c.buildYear}년${c.differences.buildYearDiff !== null ? `(본건 대비 ${c.differences.buildYearDiff > 0 ? "+" : ""}${c.differences.buildYearDiff}년)` : ""}` : "준공연도 미확인",
+      `최근 ${o.recentMonths}개월 ${area ? "유사면적 " : ""}거래 ${c.recentTrades}건`,
+    ].join(" · ");
+  });
+  eligible.slice(5).forEach((c) => c.reasons.push("대표 5개 순위 밖(거리·연식 기준)"));
+  const selectedKeys = new Set(comparables.map((c) => c.complexKey));
+  txRows.forEach((r) => { r.included = r.reasons.length === 0 && selectedKeys.has(r.complexKey); if (r.reasons.length === 0 && !r.included) r.reasons.push("대표 비교단지 아님"); });
+  const pooled = computeStats(txRows.filter((r) => r.included).map((r) => ({ perM2: r.perM2!, complex: r.complexKey })));
 
-  const min = w.options.minSample;
-  const sampleSufficient = target.pre.count >= min && target.post.count >= min;
-  const tc = target.pre.medianPerM2 && target.post.medianPerM2 ? (target.post.medianPerM2 / target.pre.medianPerM2 - 1) * 100 : null;
-  const cc = comparator.pre.medianPerM2 && comparator.post.medianPerM2 ? (comparator.post.medianPerM2 / comparator.pre.medianPerM2 - 1) * 100 : null;
-  const cmpSufficient = comparator.pre.count >= min && comparator.post.count >= min;
-  const idx = tc !== null && cc !== null && cmpSufficient ? compareIndices(100, 100 + tc, 100, 100 + cc) : null;
-  if (!sampleSufficient) flags.push({ level: "high", area: "price", text: `사건 전후 본건 권역 표본 부족(전 ${target.pre.count}건·후 ${target.post.count}건, 기준 ${min}건) — 관찰 변화 미산출` });
-  const validSample = target.all.count + comparator.all.count > 0;
-  if (!validSample) flags.push({ level: "high", area: "price", text: "유효한 비교거래 없음 — 평균·중위값을 표시하지 않음" });
-
-  const compsMedian = target.all.medianPerM2;
-  const diffPct = proposedPerM2 !== null && compsMedian ? (proposedPerM2 / compsMedian - 1) * 100 : null;
-  if (diffPct !== null && Math.abs(diffPct) >= 10) flags.push({ level: "medium", area: "price", text: `제시 분양가 ㎡당 단가가 비교거래 중위값과 ${diffPct > 0 ? "+" : ""}${diffPct.toFixed(1)}% 차이` });
+  if (w.transactions.length && !comparables.length) flags.push({ level: "high", area: "price", text: "비교 가능한 단지 없음(거래 표본·면적·거리·준공연도 기준 미충족)" });
+  else if (comparables.length && comparables.length < 3) flags.push({ level: "medium", area: "price", text: `비교 가능한 단지 ${comparables.length}개뿐 — 비교 범위 제한` });
+  if (comparables.some((c) => c.distanceM === null)) flags.push({ level: "medium", area: "price", text: "일부 비교단지 거리 미확인 — 단지 위치 확인 필요" });
+  if (comparables.length && !w.property.buildYear) flags.push({ level: "medium", area: "price", text: "본건 준공(예정)연도 미입력 — 비교단지와 연식 차이 비교 불가" });
+  else if (comparables.some((c) => c.buildYear === null)) flags.push({ level: "medium", area: "price", text: "일부 비교단지 준공연도 미확인" });
+  const bigYear = comparables.filter((c) => c.differences.buildYearDiff !== null && Math.abs(c.differences.buildYearDiff) >= 5);
+  if (bigYear.length) flags.push({ level: "medium", area: "price", text: `비교단지와 연식 차이 5년 이상: ${bigYear.map((c) => c.name).join(", ")} — 신축·구축 차이 해석 필요` });
+  if (pooled.count > 0 && pooled.count < o.minSample) flags.push({ level: "high", area: "price", text: `비교 거래 표본 ${pooled.count}건(기준 ${o.minSample}건 미만)` });
+  if (!area && w.transactions.length) flags.push({ level: "medium", area: "price", text: "전용면적 미입력 — 모든 면적 거래를 ㎡당으로 비교(면적대 차이 미반영)" });
 
   return {
-    anchor, window: { start, end, endCappedByAsOf: capped, monthsBefore: before, monthsAfter: after }, areaBand: band, rows, exclusionCounts,
-    target, comparator, monthly, emptyMonths, dataCoverage,
-    observed: {
-      targetChangePct: sampleSufficient ? tc : null,
-      comparatorChangePct: cmpSufficient ? cc : null,
-      diffPp: sampleSufficient && idx ? idx.diffPp : null,
-      relativeGapPct: sampleSufficient && idx ? idx.relativeGapPct : null,
-      sampleSufficient,
-      text: sampleSufficient
-        ? `관찰: 본건 권역 중위 ㎡당 단가 ${fmtPct(tc)}${idx ? `, 비교 권역 ${fmtPct(cc)}, 차이 ${fmtPp(idx.diffPp)}` : ", 비교 권역 표본 부족"}. 인과효과 아님.`
-        : "표본 부족으로 관찰 변화 미산출",
-    },
-    proposedComparison: {
-      proposedPerM2, compsMedianPerM2: compsMedian, diffPct,
-      text: proposedPerM2 === null ? "제시 분양가의 ㎡당 단가 산출 불가(전용면적 또는 가격 기준 확인 필요)" : compsMedian === null ? "유효 비교거래 없음" : `제시 ${fmtMan(proposedPerM2)}/㎡ vs 포함 비교거래 중위 ${fmtMan(compsMedian)}/㎡ (${diffPct! > 0 ? "+" : ""}${diffPct!.toFixed(1)}%)`,
-    },
-    validSample,
-    dataModes: [...new Set(rows.filter((r) => r.included).map((r) => r.dataMode))],
+    recentWindow: { start: start.raw, end: asOfMonth.raw, months: o.recentMonths }, areaFilter: band, complexes, comparables, pooled, excludedTrades, validTrades, txRows,
+    dataModes: [...new Set(w.transactions.map((t) => t.dataMode))], sources: [...new Set(w.transactions.map((t) => t.source ?? DATA_MODE_LABEL[t.dataMode]))].slice(0, 5),
   };
 }
 
-function analyzeSupply(w: WorkingInputs, asOf: DateParts, area: number | null, proposedPerM2: number | null, flags: Flag[]): AnalysisResult["supply"] {
-  const supplies = w.events.filter((e) => e.category === "supply" && e.supply);
-  const horizon = parseDateValue(w.schedule.expectedDisposal) ?? parseDateValue(w.schedule.maturity);
-  const saleStart = parseDateValue(w.schedule.saleStart);
-  const band = area ? [area * (1 - w.options.areaBandPct / 100), area * (1 + w.options.areaBandPct / 100)] : null;
-  const myDemand = new Set((w.property.targetDemand ?? []).map((s) => s.trim()).filter(Boolean));
-  const stageCounts: Record<string, number> = {};
+function comparePrice(w: WorkingInputs, area: number | null, market: MarketResult, flags: Flag[]): PriceComparison {
+  const rp = w.reviewPrice;
+  const base = { reviewPerM2: null, reviewPerPyeong: null, comparableMedianPerM2: market.pooled.medianPerM2, comparableRange: null, diffPct: null, position: null } as const;
+  if (!rp) return { ...base, status: "held", reason: "검토가격 미입력", reviewText: "미입력", basisDate: "-", text: `가격 판단 보류 — 검토가격 미입력. 시세 수준: ${market.pooled.count ? `대표 비교단지 거래 중위 ${fmtMan(market.pooled.medianPerM2)}/전용㎡` : "비교 가능한 거래 없음"}` };
+  const krw = toKrw(rp.amount, rp.unit);
+  const reviewText = `${rp.label ?? "검토가격"} ${rp.amount.toLocaleString("ko-KR")}${LABELS.moneyUnit[rp.unit]}(${LABELS.priceBasis[rp.basis]})`;
+  const basisDate = rp.basisDate ?? "기준일 미입력";
+  if (!rp.basisDate) flags.push({ level: "low", area: "price", text: "검토가격 기준일 미입력" });
+  if (krw === null) return { ...base, status: "held", reason: "금액 환산 불가", reviewText, basisDate, text: "가격 판단 보류 — 금액 환산 불가" };
+  const u = deriveUnitPrices(krw, rp.basis, area, null);
+  if (u.perM2Krw === null) return { ...base, status: "held", reason: "전용면적 필요", reviewText, basisDate, text: "가격 판단 보류 — 세대당 검토가격을 ㎡당으로 바꾸려면 전용면적 필요" };
+  const med = market.pooled.medianPerM2;
+  const meds = market.comparables.map((c) => c.stats.medianPerM2).filter((x): x is number => x !== null);
+  const range = meds.length ? { min: Math.min(...meds), max: Math.max(...meds) } : null;
+  if (med === null) return { ...base, status: "held", reason: "비교 거래 없음", reviewText, basisDate, reviewPerM2: u.perM2Krw, reviewPerPyeong: u.perPyeongKrw, text: `가격 판단 보류 — 비교 가능한 실거래 없음(검토가격 ${fmtMan(u.perM2Krw)}/전용㎡)` };
+  const diffPct = (u.perM2Krw / med - 1) * 100;
+  const position = range ? (u.perM2Krw > range.max ? "above" : u.perM2Krw < range.min ? "below" : "within") : null;
+  if (position === "above") flags.push({ level: "high", area: "price", text: `검토가격이 대표 비교단지 중위 단가 범위(${fmtMan(range!.min)}~${fmtMan(range!.max)}/전용㎡)보다 높음 — 상회 근거 확인 필요` });
+  else if (Math.abs(diffPct) >= 10) flags.push({ level: "medium", area: "price", text: `검토가격이 비교 거래 중위값과 ${diffPct > 0 ? "+" : ""}${diffPct.toFixed(1)}% 차이` });
+  return {
+    status: "computed", reviewText, basisDate, reviewPerM2: u.perM2Krw, reviewPerPyeong: u.perPyeongKrw, comparableMedianPerM2: med, comparableRange: range, diffPct, position,
+    text: `검토가격 ${fmtMan(u.perM2Krw)}/전용㎡는 대표 비교단지 거래 중위 ${fmtMan(med)}/전용㎡ 대비 ${diffPct > 0 ? "+" : ""}${diffPct.toFixed(1)}%${range ? `, 단지별 중위 범위(${fmtMan(range.min)}~${fmtMan(range.max)}) ${position === "above" ? "상단 초과" : position === "below" ? "하단 미만" : "안"}` : ""}. 적정가격을 산정한 것이 아님.`,
+  };
+}
+
+function observeChange(w: WorkingInputs, asOf: DateParts, events: EventResult[], market: MarketResult, flags: Flag[]): ObservedChange {
+  const o = w.options;
+  const anchorEv = events.find((e) => e.key === o.anchorEventKey && e.announcement) ?? events.find((e) => e.category !== "supply" && e.announcement);
+  const empty = computeStats([]);
+  if (!anchorEv) return { status: "notComputed", anchor: "-", window: "-", pre: empty, post: empty, changePct: null, text: "관찰된 변화: 발표일이 확인된 입지 사건이 없어 전후 비교 안 함" };
+  const a = anchorEv.announcement!;
+  const am: DateParts = { raw: monthKey(a), precision: "month", y: a.y, m: a.m };
+  const start = addMonths(am, -o.comparisonMonthsBefore);
+  let end = addMonths(am, o.comparisonMonthsAfter);
+  if (compareMonth(end, asOf) > 0) end = { raw: monthKey(asOf), precision: "month", y: asOf.y, m: asOf.m };
+  const sel = new Set(market.comparables.map((c) => c.complexKey));
+  const band = market.areaFilter;
+  const rows = w.transactions.filter((t) => sel.has(complexKeyOf(t)) && !t.cancelled && !t.manualExclusion && t.exclusiveAreaM2 > 0 && t.priceKrw > 0 && (!band || (t.exclusiveAreaM2 >= band.minM2 && t.exclusiveAreaM2 <= band.maxM2)));
+  const pre: { perM2: number; complex: string }[] = [], post: { perM2: number; complex: string }[] = [];
+  rows.forEach((t) => {
+    const d = parseDateValue(t.contractDate);
+    if (!d || compareMonth(d, start) < 0 || compareMonth(d, end) > 0 || isBefore(asOf, d) === true) return;
+    const c = compareMonth(d, am);
+    if (c < 0) pre.push({ perM2: t.priceKrw / t.exclusiveAreaM2, complex: complexKeyOf(t) });
+    else if (c > 0) post.push({ perM2: t.priceKrw / t.exclusiveAreaM2, complex: complexKeyOf(t) });
+  });
+  const ps = computeStats(pre), qs = computeStats(post);
+  const window = `${start.raw}~${end.raw}(발표월 제외)`;
+  const firstMonth = rows.map((t) => t.contractDate).sort()[0];
+  if (rows.length && (!firstMonth || firstMonth.slice(0, 7) > start.raw)) flags.push({ level: "medium", area: "data", text: `사건 전 비교기간(${start.raw}부터) 중 거래 자료가 ${firstMonth?.slice(0, 7) ?? "없음"}부터만 있음 — 기간 부족, 빈 기간을 채우지 않음` });
+  if (ps.count < o.minSample || qs.count < o.minSample) {
+    flags.push({ level: "medium", area: "price", text: `${anchorEv.name} 전후 거래 표본 부족(전 ${ps.count}건·후 ${qs.count}건, 기준 ${o.minSample}건) — 관찰 변화 미산출` });
+    return { status: "notComputed", anchor: `${anchorEv.name} 발표 ${formatDateValue(a)}`, window, pre: ps, post: qs, changePct: null, text: `관찰된 변화: 표본 부족으로 미산출(전 ${ps.count}건·후 ${qs.count}건)` };
+  }
+  const changePct = (qs.medianPerM2! / ps.medianPerM2! - 1) * 100;
+  return { status: "computed", anchor: `${anchorEv.name} 발표 ${formatDateValue(a)}`, window, pre: ps, post: qs, changePct, text: `관찰된 변화: ${anchorEv.name} 발표 전후 대표 비교단지 중위 단가 ${changePct > 0 ? "+" : ""}${changePct.toFixed(1)}%(전 ${ps.count}건·후 ${qs.count}건). 시장 전반 변화가 섞여 있어 입지 효과로 볼 수 없음.` };
+}
+
+function analyzeSupply(w: WorkingInputs, asOf: DateParts, area: number | null, flags: Flag[]): AnalysisResult["supply"] {
+  const o = w.options;
+  const sale = parseDateValue(w.schedule.saleStart ?? null), comp = parseDateValue(w.schedule.completion ?? null);
+  let from: DateParts, to: DateParts, windowText: string;
+  if (sale || comp) {
+    from = addMonths(sale ?? comp!, -12);
+    to = addMonths(comp ?? sale!, 12);
+    windowText = `본건 ${sale ? "분양" : "준공"} 12개월 전 ~ ${comp ? "준공" : "분양"} 12개월 후(${monthKey(from)}~${monthKey(to)})`;
+  } else {
+    from = { raw: monthKey(asOf), precision: "month", y: asOf.y, m: asOf.m };
+    to = addMonths(from, 36);
+    windowText = `기준일 이후 36개월(${monthKey(from)}~${monthKey(to)}, 본건 일정 미입력)`;
+  }
+  const band = area ? [area * (1 - o.areaBandPct / 100), area * (1 + o.areaBandPct / 100)] : null;
   let overlappingHouseholds = 0;
-  const rows: SupplyResult[] = supplies.map((e) => {
-    const s = e.supply!;
-    stageCounts[SUPPLY_STAGE_LABEL[s.stage]] = (stageCounts[SUPPLY_STAGE_LABEL[s.stage]] ?? 0) + 1;
+  const rows: SupplyResult[] = w.events.filter((e) => e.category === "supply").map((e) => {
+    const s = e.supply ?? { stage: "plan" as const };
     const notes: string[] = [];
-    const sd = parseDateValue(s.saleDate ?? null);
-    const od = parseDateValue(s.occupancyDate ?? null);
+    const dates = [parseDateValue(s.saleDate ?? null), parseDateValue(s.occupancyDate ?? null)].filter(Boolean) as DateParts[];
     let timing: SupplyResult["timing"] = "unknown";
-    const from = saleStart ? addMonths(saleStart, -12) : asOf;
-    if (!horizon) notes.push("만기·처분 일정 미입력 — 시기 비교 불가");
-    else if (!sd && !od) notes.push("공급 시기 미입력");
-    else timing = [sd, od].some((d) => d && compareMonth(d, from) >= 0 && compareMonth(d, horizon) <= 0) ? "yes" : "no";
+    if (!dates.length) notes.push("공급 시기 미입력");
+    else timing = dates.some((d) => compareMonth(d, from) >= 0 && compareMonth(d, to) <= 0) ? "yes" : "no";
     let areaO: SupplyResult["area"] = "unknown";
     if (band && s.areaMinM2 && s.areaMaxM2) areaO = s.areaMaxM2 >= band[0] && s.areaMinM2 <= band[1] ? "yes" : "no";
     else notes.push("면적대 비교 불가");
-    let priceO: SupplyResult["price"] = "unknown";
-    if (proposedPerM2 && s.priceMinPerM2Krw && s.priceMaxPerM2Krw) priceO = s.priceMaxPerM2Krw >= proposedPerM2 * 0.9 && s.priceMinPerM2Krw <= proposedPerM2 * 1.1 ? "yes" : "no";
-    else notes.push("가격대 비교 불가");
-    let demand: SupplyResult["demand"] = "unknown";
-    if (myDemand.size && s.demandGroups?.length) demand = s.demandGroups.some((g) => myDemand.has(g.trim())) ? "yes" : "no";
-    else notes.push("수요층 비교 불가");
-    const overlapCount = [timing, areaO, priceO, demand].filter((x) => x === "yes").length;
     if (timing === "yes" && s.households) overlappingHouseholds += s.households;
-    if (overlapCount >= 3) flags.push({ level: "high", area: "supply", text: `${e.name}: 시기·면적·가격·수요층 중 ${overlapCount}개 겹치는 경쟁 공급(${SUPPLY_STAGE_LABEL[s.stage]})` });
-    else if (timing === "yes") flags.push({ level: "medium", area: "supply", text: `${e.name}: 본건 분양~회수 기간과 시기가 겹치는 공급(${SUPPLY_STAGE_LABEL[s.stage]}${s.households ? `, ${s.households.toLocaleString("ko-KR")}세대` : ""})` });
-    return { key: e.key, name: e.name, stage: SUPPLY_STAGE_LABEL[s.stage], households: s.households ?? null, dataMode: e.dataMode, timing, area: areaO, price: priceO, demand, overlapCount, notes };
+    if (timing === "yes") flags.push({ level: areaO === "yes" ? "high" : "medium", area: "supply", text: `경쟁 공급 ${e.name}(${SUPPLY_STAGE_LABEL[s.stage]}${s.households ? `, ${s.households.toLocaleString("ko-KR")}세대` : ""}) — 시기${areaO === "yes" ? "·면적대" : ""} 겹침` });
+    return { key: e.key, name: e.name, stage: SUPPLY_STAGE_LABEL[s.stage], households: s.households ?? null, dataMode: e.dataMode, timing, area: areaO, notes };
   });
-  const text = rows.length
-    ? `${Object.entries(stageCounts).map(([k, v]) => `${k} ${v}`).join(", ")}; 시기 겹침 ${rows.filter((r) => r.timing === "yes").length}건(${overlappingHouseholds.toLocaleString("ko-KR")}세대). 공개 자료로 분양률·매각 소요기간을 환산하지 않음.`
-    : "경쟁 공급 미입력";
-  return { rows, stageCounts, overlappingHouseholds, text };
-}
-
-/** LTV 참고계산(제한적). 담보 범위·기준일 확인, 분자 정의, 선순위 상태가 모두 충족될 때만 계산. 판정하지 않음. */
-export function computeLtv(w: WorkingInputs, declinePct: number | null): LtvResult {
-  const reasons: string[] = [];
-  const d = w.debt;
-  const value = w.prices.find((p) => p.kind === w.ltvChecks.valueKind && p.basis === "project");
-  if (!d) reasons.push("채권정보 미전달·미입력(선택 항목)");
-  if (!value) reasons.push(`사업 전체 기준 ${LABELS.priceKind[w.ltvChecks.valueKind]} 없음(세대당 가격과 사업 전체 채권은 직접 나누지 않음)`);
-  if (d && value && !w.ltvChecks.collateralScopeConfirmed) reasons.push("가격과 채권의 담보 범위 일치 확인 필요");
-  const sameDate = d?.basisDate && value?.basisDate && d.basisDate === value.basisDate;
-  if (d && value && !sameDate && !w.ltvChecks.basisDateConfirmed) reasons.push("가격·채권 기준일 일치 확인 필요");
-  const valueKrw = value ? toKrw(value.amount, value.unit) : null;
-  const own = d ? toKrw(d.amount, d.unit) : null;
-  let combined: number | null = null;
-  let seniorText: string | null = null;
-  if (d) {
-    if (d.seniorStatus === "confirmedNone") { combined = own; seniorText = "선순위 없음(확인)"; }
-    else if (d.seniorStatus === "confirmedAmount" && d.seniorAmount !== undefined) {
-      const s = toKrw(d.seniorAmount, d.unit);
-      combined = own !== null && s !== null ? own + s : null;
-      seniorText = `선순위 ${fmtEok(s)} 포함`;
-    } else seniorText = "선순위 미확인 — 통합 담보부담비율 미산출(0원으로 처리하지 않음)";
-  }
-  const note = "가정 비교용 산술 참고값. 회수 가능·불가, 승인·보류·거절, 본PF 전환·상환가능성을 판정하지 않음.";
-  if (reasons.length || valueKrw === null) {
-    return { status: "notComputable", reasons: reasons.length ? reasons : ["가치 환산 불가"], definition: d ? LABELS.debtDefinition[d.definition] : null, seniorText, numeratorOwnKrw: own, numeratorCombinedKrw: combined, valueLabel: value ? LABELS.priceKind[value.kind] : null, valueBasisDate: value?.basisDate ?? null, debtBasisDate: d?.basisDate ?? null, rows: [], note };
-  }
-  const mk = (label: string, v: number): LtvRow => ({ label, valueKrw: v, ownLtvPct: ltvPct(own, v), combinedLtvPct: d!.seniorStatus === "unknown" ? null : ltvPct(combined, v) });
-  const rows = [mk("기준 가치", valueKrw), mk("가치 +10% (산술 비교)", Math.round(valueKrw * 1.1)), mk("가치 −10% (산술 비교)", Math.round(valueKrw * 0.9))];
-  if (declinePct !== null && declinePct !== 10) rows.push(mk(`사용자 가정: 가치 −${declinePct}%`, Math.round(valueKrw * (1 - declinePct / 100))));
-  return { status: "computed", reasons: [], definition: LABELS.debtDefinition[d!.definition], seniorText, numeratorOwnKrw: own, numeratorCombinedKrw: combined, valueLabel: `${LABELS.priceKind[value!.kind]}(사업 전체)`, valueBasisDate: value!.basisDate ?? null, debtBasisDate: d!.basisDate ?? null, rows, note };
+  return {
+    rows, window: windowText, overlappingHouseholds,
+    text: rows.length ? `시기 겹침 ${rows.filter((r) => r.timing === "yes").length}건(${overlappingHouseholds.toLocaleString("ko-KR")}세대, ${windowText}). 분양률·매각기간으로 환산하지 않음` : "입력된 주변 입주 물량 없음",
+  };
 }

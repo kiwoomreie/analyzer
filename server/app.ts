@@ -16,7 +16,7 @@ import { recordFromContract, type AnalysisRecord, type WorkingInputs } from "../
 import { runAnalysis } from "../shared/analysis.ts";
 import { checkWorkingShape, scanWorking } from "../shared/importers.ts";
 import { seoulNowIso } from "../shared/dates.ts";
-import { fetchMolitAptTrades, type SafeFetchDeps } from "./publicData.ts";
+import { fetchMolitAptTrades, geocodeKakao, OutboundBlocked, type SafeFetchDeps } from "./publicData.ts";
 
 const MIME: Record<string, string> = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".svg": "image/svg+xml", ".png": "image/png", ".ico": "image/x-icon", ".json": "application/json" };
 
@@ -43,8 +43,19 @@ export function createApp(cfg: AppConfig, deps: AppDeps = {}): App {
       const url = new URL(req.url ?? "/", "http://local");
       const p = url.pathname;
       const ip = clientIp(req, cfg.trustProxy);
-      if (p === "/launch") { route = "/launch"; await handleLaunch(req, res, ip); }
-      else if (p.startsWith("/launch/claim/")) { route = "/launch/claim/:ticket"; await handleClaim(req, res, p.slice("/launch/claim/".length)); }
+      if (p === "/launch" || p.startsWith("/launch/")) {
+        route = p === "/launch" ? "/launch" : "/launch/claim/:ticket";
+        if (!cfg.launchReceiverEnabled) {
+          // 입력 규격·수신 주소 확정 전까지 대기: 본문을 읽지 않고 거절(저장·기록 없음)
+          req.resume();
+          res.setHeader("Referrer-Policy", "no-referrer");
+          sendPage(res, 503, "협의체 시동 수신은 대기 중입니다", "<p>입력 규격과 수신 주소가 확정되기 전까지 이 경로는 비활성입니다. 받은 자료는 저장하지 않았습니다.</p><p><a href=\"/app\">아파트 입지·가격 분석기에서 주소로 직접 시작하기</a></p>");
+          return;
+        }
+        if (p === "/launch") await handleLaunch(req, res, ip);
+        else if (p.startsWith("/launch/claim/")) await handleClaim(req, res, p.slice("/launch/claim/".length));
+        else throw new HttpError(404, "NOT_FOUND", "없음");
+      }
       else if (p.startsWith("/api/")) {
         route = apiRoute(p);
         if (!apiLimiter.allow(ip, now())) throw new HttpError(429, "RATE_LIMIT", "요청이 너무 많음");
@@ -108,6 +119,11 @@ export function createApp(cfg: AppConfig, deps: AppDeps = {}): App {
     const t = now();
     const row = db.prepare("SELECT * FROM pending_launches WHERE id = ?").get(pid) as any;
     if (!row || !safeEqualHex(row.code_hash, sha256(code))) throw new HttpError(404, "TICKET", "수령 코드가 없거나 일치하지 않음");
+    // 새로고침·뒤로가기: 이미 이 브라우저 작업공간이 수령한 경우 같은 분석으로 이동(새 분석 없음)
+    if (row.consumed_at) {
+      const cur = findWorkspace(db, req, t);
+      if (cur && row.consumed_ws === cur.id && row.analysis_key && db.prepare("SELECT key FROM temp_analyses WHERE key = ? AND workspace_id = ?").get(row.analysis_key, cur.id)) return redirect303(res, `/app/a/${row.analysis_key}`);
+    }
     const bind = parseCookies(req)[bindCookieName(pid)];
     if (!bind || !safeEqualHex(row.bind_hash, sha256(bind))) {
       sendPage(res, 403, "수신 세션을 확인할 수 없습니다", "<p>이 시동 자료는 전송한 브라우저에서만 열 수 있습니다. 수령 코드만으로는 자료를 열거나 다른 세션에 연결하지 않습니다.</p><p>같은 브라우저에서 협의체의 ‘분석기 시동’을 다시 누르거나, 협의체의 파일 내보내기를 이용해 <a href=\"/app\">분석기</a>에서 가져오십시오.</p>");
@@ -142,7 +158,7 @@ export function createApp(cfg: AppConfig, deps: AppDeps = {}): App {
     }
     const key = "an_" + randomToken(16);
     const rec = recordFromContract(doc, { key, receivedAt: seoulNowIso(new Date(t)), kind: "launch" });
-    if (cfg.molit.autoFetch && cfg.molit.serviceKey && rec.working.property.lawdCode && rec.working.property.assetType === "apartment") {
+    if (cfg.molit.autoFetch && cfg.molit.serviceKey && rec.working.property.lawdCode) {
       const months = recentMonths(rec.working.asOf, cfg.molit.maxMonths);
       const r = await fetchMolitAptTrades(cfg.molit, rec.working.property.lawdCode, months, deps.publicDataDeps);
       rec.working.transactions.push(...r.items);
@@ -150,7 +166,7 @@ export function createApp(cfg: AppConfig, deps: AppDeps = {}): App {
     const result = runAnalysis(rec.working);
     rec.runs.push({ runNo: 1, at: seoulNowIso(new Date(t)), trigger: "auto-launch", inputHash: result.inputHash, result });
     db.prepare("INSERT INTO temp_analyses (key, workspace_id, launch_id, payload_hash, record_json, supported, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)").run(
-      key, ws.id, row.launch_id, row.payload_hash, JSON.stringify(rec), result.assetSupported ? 1 : 0, t, t + cfg.tempAnalysisTtlHours * 3600000,
+      key, ws.id, row.launch_id, row.payload_hash, JSON.stringify(rec), doc.property?.assetType === "apartment" ? 1 : 0, t, t + cfg.tempAnalysisTtlHours * 3600000,
     );
     db.prepare("UPDATE pending_launches SET analysis_key = ? WHERE id = ?").run(key, pid);
     redirect303(res, `/app/a/${key}`);
@@ -166,6 +182,8 @@ export function createApp(cfg: AppConfig, deps: AppDeps = {}): App {
         config: {
           kakaoJsKey: cfg.kakaoJsKey,
           publicData: cfg.molit.serviceKey ? "configured" : "unset",
+          geocoder: cfg.kakaoRestKey ? "configured" : "unset",
+          launchReceiver: cfg.launchReceiverEnabled ? "enabled" : "standby",
           publicDataAutoFetch: cfg.molit.autoFetch && !!cfg.molit.serviceKey,
           tempAnalysisTtlHours: cfg.tempAnalysisTtlHours,
           launchPendingTtlSec: cfg.launchPendingTtlSec,
@@ -213,13 +231,30 @@ export function createApp(cfg: AppConfig, deps: AppDeps = {}): App {
       }
       throw new HttpError(405, "METHOD", "허용되지 않는 메서드");
     }
-    if (p === "/api/public-data/apt-trades" && req.method === "POST") {
+    if (p === "/api/public-data/lookup" && req.method === "POST") {
       requireWriteAccess(db, req, t);
       const body = await readJson(req);
-      if (!cfg.molit.serviceKey) return sendJson(res, 503, { status: "unset", message: "공공데이터 키 미설정 — 실거래 자동 조회를 사용할 수 없음" });
-      const months = Array.isArray(body?.yearMonths) ? body.yearMonths.map(String) : [];
-      const r = await fetchMolitAptTrades(cfg.molit, String(body?.lawdCode ?? ""), months, deps.publicDataDeps);
-      return sendJson(res, 200, r);
+      if (!cfg.molit.serviceKey && !cfg.kakaoRestKey) return sendJson(res, 503, { status: "unset", message: "공공데이터·지도 키 미설정 — 자동 조회 불가" });
+      const address = typeof body?.address === "string" ? body.address.slice(0, 200) : "";
+      const asOf = typeof body?.asOf === "string" && /^\d{4}-\d{2}-\d{2}$/.test(body.asOf) ? body.asOf : null;
+      if (!address || !asOf) throw new HttpError(400, "INPUT", "address·asOf 필요");
+      const log: string[] = [];
+      let geocode = null;
+      if (cfg.kakaoRestKey) {
+        try { geocode = await geocodeKakao(cfg.kakaoRestKey, address, deps.publicDataDeps); log.push(geocode ? "주소→좌표 변환 완료" : "주소 검색 결과 없음"); }
+        catch (e) { log.push(`주소 검색 실패(${e instanceof OutboundBlocked ? e.code : "오류"})`); }
+      } else log.push("주소→좌표: 지도 키 미설정");
+      const lawd = (typeof body?.lawdCode === "string" && /^\d{5}$/.test(body.lawdCode) ? body.lawdCode : null) ?? geocode?.lawdCode ?? null;
+      let trades: any[] = [];
+      if (!cfg.molit.serviceKey) log.push("실거래: 공공데이터 키 미설정");
+      else if (!lawd) log.push("실거래: 시군구 코드 확인 불가");
+      else {
+        const months = Math.min(Math.max(Number(body?.months) || 12, 1), cfg.molit.maxMonths);
+        const r = await fetchMolitAptTrades(cfg.molit, lawd, recentMonths(asOf, months), deps.publicDataDeps);
+        trades = r.items;
+        log.push(`실거래 ${r.items.length}건(${months}개월, 시군구 ${lawd})${r.errors.length ? ` · 오류 ${r.errors.slice(0, 3).join(", ")}` : ""}`);
+      }
+      return sendJson(res, 200, { geocode, trades, log });
     }
     throw new HttpError(404, "NOT_FOUND", "없는 API");
   }

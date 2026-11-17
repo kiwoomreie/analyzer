@@ -6,6 +6,8 @@ export interface SessionInfo {
   config: {
     kakaoJsKey: string | null;
     publicData: "configured" | "unset";
+    geocoder: "configured" | "unset";
+    launchReceiver: "enabled" | "standby";
     publicDataAutoFetch: boolean;
     tempAnalysisTtlHours: number;
     launchPendingTtlSec: number;
@@ -64,4 +66,10 @@ export async function getTemp(key: string): Promise<{ record: AnalysisRecord; ex
 
 export const putTemp = (rec: AnalysisRecord) => write("PUT", `/api/temp-analyses/${encodeURIComponent(rec.key)}`, { record: rec });
 export const deleteTemp = (key: string) => write("DELETE", `/api/temp-analyses/${encodeURIComponent(key)}`);
-export const fetchAptTrades = (lawdCode: string, yearMonths: string[]) => write("POST", "/api/public-data/apt-trades", { lawdCode, yearMonths });
+export interface LookupResult {
+  geocode: { lat: number; lng: number; lawdCode?: string; source: string } | null;
+  trades: import("../shared/model.ts").Transaction[];
+  log: string[];
+}
+/** 새 앱 서버의 고정 어댑터(주소→좌표, 국토부 실거래)만 호출. 키가 없으면 503(미설정). */
+export const lookupPublicData = (q: { address: string; lawdCode?: string; asOf: string; months: number }): Promise<LookupResult> => write("POST", "/api/public-data/lookup", q);

@@ -7,7 +7,7 @@ import { isIP } from "node:net";
 import type { Transaction } from "../shared/model.ts";
 import { newKey } from "../shared/model.ts";
 
-export const ALLOWED_HOSTS = new Set(["apis.data.go.kr"]);
+export const ALLOWED_HOSTS = new Set(["apis.data.go.kr", "dapi.kakao.com"]);
 
 export class OutboundBlocked extends Error {
   constructor(public code: string, message: string) { super(message); }
@@ -50,10 +50,10 @@ const defaultLookup: LookupFn = (host, cb) => dnsLookup(host, { all: true }, (e,
 export interface SafeFetchDeps {
   lookup?: LookupFn;
   /** 시험용: 실제 네트워크 대신 응답을 흉내 */
-  transport?: (u: URL, address: LookupAddress) => Promise<{ status: number; headers: Record<string, string>; body: Buffer }>;
+  transport?: (u: URL, address: LookupAddress, headers: Record<string, string>) => Promise<{ status: number; headers: Record<string, string>; body: Buffer }>;
 }
 
-export async function safeGet(raw: string, opts: { timeoutMs?: number; maxBytes?: number } = {}, deps: SafeFetchDeps = {}): Promise<{ status: number; body: Buffer }> {
+export async function safeGet(raw: string, opts: { timeoutMs?: number; maxBytes?: number; headers?: Record<string, string> } = {}, deps: SafeFetchDeps = {}): Promise<{ status: number; body: Buffer }> {
   const u = checkTargetUrl(raw);
   const lookup = deps.lookup ?? defaultLookup;
   const addrs = await new Promise<LookupAddress[]>((resolve, reject) => lookup(u.hostname, (e, a) => (e ? reject(new OutboundBlocked("DNS", "이름 해석 실패")) : resolve(a))));
@@ -61,21 +61,21 @@ export async function safeGet(raw: string, opts: { timeoutMs?: number; maxBytes?
   const address = addrs[0];
   const timeoutMs = opts.timeoutMs ?? 8000;
   const maxBytes = opts.maxBytes ?? 2 * 1024 * 1024;
-  const transport = deps.transport ?? ((url, addr) => realTransport(url, addr, timeoutMs, maxBytes));
-  const r = await transport(u, address);
+  const transport = deps.transport ?? ((url, addr, h) => realTransport(url, addr, timeoutMs, maxBytes, h));
+  const r = await transport(u, address, opts.headers ?? {});
   if (r.status >= 300 && r.status < 400) throw new OutboundBlocked("REDIRECT", "리디렉션은 따르지 않음");
   if (r.body.length > maxBytes) throw new OutboundBlocked("TOO_LARGE", "응답 크기 상한 초과");
   return { status: r.status, body: r.body };
 }
 
-function realTransport(u: URL, addr: LookupAddress, timeoutMs: number, maxBytes: number) {
+function realTransport(u: URL, addr: LookupAddress, timeoutMs: number, maxBytes: number, extraHeaders: Record<string, string>) {
   return new Promise<{ status: number; headers: Record<string, string>; body: Buffer }>((resolve, reject) => {
     const req = httpsRequest(
       {
         host: u.hostname, servername: u.hostname, path: u.pathname + u.search, method: "GET", port: 443, timeout: timeoutMs,
         // 검사한 주소로만 접속(DNS 재바인딩 방지)
         lookup: (_h: string, _o: unknown, cb: (e: Error | null, a: string, f: number) => void) => cb(null, addr.address, addr.family),
-        headers: { Accept: "application/xml, text/xml, application/json" },
+        headers: { Accept: "application/xml, text/xml, application/json", ...extraHeaders },
       } as any,
       (res) => {
         const chunks: Buffer[] = [];
@@ -97,7 +97,7 @@ function tag(item: string, name: string): string | undefined {
 }
 
 /** XML 응답에서 필요한 필드만 텍스트로 읽는다(실행·외부 참조 없음). 금액 단위는 만원. */
-export function parseMolitAptTrades(xml: string): { items: Transaction[]; resultCode?: string; resultMsg?: string } {
+export function parseMolitAptTrades(xml: string, source = "국토교통부 아파트 매매 실거래가 API"): { items: Transaction[]; resultCode?: string; resultMsg?: string } {
   const resultCode = tag(xml, "resultCode");
   const resultMsg = tag(xml, "resultMsg");
   const items: Transaction[] = [];
@@ -112,10 +112,10 @@ export function parseMolitAptTrades(xml: string): { items: Transaction[]; result
     const contractDate = `${y}-${mo.padStart(2, "0")}${d ? `-${d.padStart(2, "0")}` : ""}`;
     const cdeal = (tag(it, "cdealType") ?? "").trim();
     items.push({
-      key: newKey("tx"), complexName: (tag(it, "aptNm") ?? "단지명 미상").slice(0, 80), exclusiveAreaM2: area,
+      key: newKey("tx"), complexName: (tag(it, "aptNm") ?? "단지명 미상").slice(0, 80), dong: tag(it, "umdNm")?.slice(0, 40), exclusiveAreaM2: area,
       floor: Number(tag(it, "floor")) || undefined, priceKrw: Math.round(amountMan * 1e4), contractDate,
-      cancelled: cdeal !== "", cancelDate: tag(it, "cdealDay") || undefined, group: "target",
-      buildYear: Number(tag(it, "buildYear")) || undefined, dataMode: "official-api",
+      cancelled: cdeal !== "", cancelDate: tag(it, "cdealDay") || undefined,
+      buildYear: Number(tag(it, "buildYear")) || undefined, dataMode: "official-api", source,
     });
   }
   return { items, resultCode, resultMsg };
@@ -139,7 +139,7 @@ export async function fetchMolitAptTrades(cfg: MolitConfig, lawdCode: string, ye
     try {
       const r = await safeGet(u.toString(), {}, deps);
       if (r.status !== 200) { errors.push(`${ym}: 응답 ${r.status}`); continue; }
-      const p = parseMolitAptTrades(r.body.toString("utf8"));
+      const p = parseMolitAptTrades(r.body.toString("utf8"), `국토교통부 아파트 매매 실거래가 API(${new Date().toISOString().slice(0, 10)} 조회)`);
       if (p.resultCode && !/^0+$/.test(p.resultCode)) { errors.push(`${ym}: 결과코드 ${p.resultCode}`); continue; }
       items.push(...p.items);
     } catch (e) {
@@ -147,4 +147,27 @@ export async function fetchMolitAptTrades(cfg: MolitConfig, lawdCode: string, ye
     }
   }
   return { status: errors.length && !items.length ? ("error" as const) : ("ok" as const), items, errors, requestedMonths: months };
+}
+
+// ── 카카오 로컬 주소 검색(주소→좌표·법정동코드). 실제 호출 미검증.
+export interface GeocodeResult { lat: number; lng: number; lawdCode?: string; source: string }
+
+export function parseKakaoAddress(json: string): GeocodeResult | null {
+  let d: any;
+  try { d = JSON.parse(json); } catch { return null; }
+  const doc = Array.isArray(d?.documents) ? d.documents[0] : null;
+  if (!doc) return null;
+  const lng = Number(doc.x), lat = Number(doc.y);
+  if (!(lat >= 33 && lat <= 39 && lng >= 124 && lng <= 132)) return null;
+  const bcode = String(doc.address?.b_code ?? "");
+  return { lat, lng, lawdCode: /^\d{10}$/.test(bcode) ? bcode.slice(0, 5) : undefined, source: `카카오 로컬 주소검색(${new Date().toISOString().slice(0, 10)})` };
+}
+
+export async function geocodeKakao(restKey: string | null, address: string, deps: SafeFetchDeps = {}): Promise<GeocodeResult | null> {
+  if (!restKey || !address.trim()) return null;
+  const u = new URL("https://dapi.kakao.com/v2/local/search/address.json");
+  u.searchParams.set("query", address.slice(0, 200));
+  const r = await safeGet(u.toString(), { headers: { Authorization: `KakaoAK ${restKey}` } }, deps);
+  if (r.status !== 200) throw new OutboundBlocked("STATUS", `주소 검색 응답 ${r.status}`);
+  return parseKakaoAddress(r.body.toString("utf8"));
 }

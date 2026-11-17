@@ -15,6 +15,10 @@ export interface AppConfig {
   rateLimitApiPerMin: number;
   cleanupIntervalSec: number;
   kakaoJsKey: string | null;
+  /** 카카오 로컬 API(주소→좌표) REST 키. 새 앱 전용 키만 사용 */
+  kakaoRestKey: string | null;
+  /** 협의체 시동 수신(/launch). 입력 규격·수신 주소 확정 전까지 기본 비활성(대기) */
+  launchReceiverEnabled: boolean;
   molit: { serviceKey: string | null; endpoint: string; autoFetch: boolean; maxMonths: number };
   trustProxy: boolean;
 }
@@ -38,12 +42,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     rateLimitApiPerMin: int(env.RATE_LIMIT_API_PER_MIN, 600),
     cleanupIntervalSec: int(env.CLEANUP_INTERVAL_SEC, 60),
     kakaoJsKey: env.KAKAO_JS_KEY || null,
+    kakaoRestKey: env.KAKAO_REST_KEY || null,
+    launchReceiverEnabled: env.LAUNCH_RECEIVER_ENABLED === "true",
     molit: {
       serviceKey: env.MOLIT_SERVICE_KEY || null,
       // 공식 문서(data.go.kr 15126469)로 최종 확인 필요. 호스트는 publicData.ts 허용목록으로 고정.
       endpoint: env.MOLIT_APT_TRADE_ENDPOINT ?? "https://apis.data.go.kr/1613000/RTMSDataSvcAptTrade/getRTMSDataSvcAptTrade",
       autoFetch: env.PUBLIC_DATA_AUTO_FETCH === "true",
-      maxMonths: int(env.PUBLIC_DATA_MAX_MONTHS, 6),
+      maxMonths: int(env.PUBLIC_DATA_MAX_MONTHS, 12),
     },
     trustProxy: env.TRUST_PROXY === "true" || prod,
   };

@@ -4,11 +4,11 @@ import { isSecretLike, isForbiddenKey, scanSafety, type SafetyIssue } from "./sa
 import { validateContractDocument, type ContractValidation } from "./validate.ts";
 import { parseDateValue } from "./dates.ts";
 import {
-  ANALYSIS_FORMAT, newKey, type AnalysisRecord, type DataMode, type Evidence, type IndexComparisonInput,
+  ANALYSIS_FORMAT, newKey, type AnalysisRecord, type DataMode, type Evidence,
   type LocationEvent, type Transaction, type WorkingInputs,
 } from "./model.ts";
 
-export const FREE_TEXT_KEYS = ["sourceUrl", "fact", "note", "appraisalNote", "routeSource", "purpose", "title", "publisher"];
+export const FREE_TEXT_KEYS = ["sourceUrl", "fact", "note", "appraisalNote", "routeSource", "purpose", "title", "publisher", "source", "detail", "distanceSource", "userReason"];
 
 /** 작업본 안전 검사(앱 내 편집·백업 복구). 첨부 텍스트 본문은 비밀값 형태만 따로 검사. */
 export function scanWorking(w: unknown): SafetyIssue[] {
@@ -33,11 +33,11 @@ export function checkWorkingShape(w: WorkingInputs): string[] {
     if (typeof v !== "string" || !parseDateValue(v)) errs.push(`${path}: 날짜 형식(YYYY-MM 또는 YYYY-MM-DD) 아님`);
   };
   if (!parseDateValue(w.asOf) || parseDateValue(w.asOf)!.precision !== "day") errs.push("asOf: YYYY-MM-DD 필요");
-  if (!w.property || typeof w.property.assetType !== "string") errs.push("property.assetType: 필수");
+  if (!w.property || typeof w.property.address !== "string") errs.push("property.address: 필수");
   num(w.property?.exclusiveAreaM2, "property.exclusiveAreaM2");
-  if (!Array.isArray(w.prices) || !Array.isArray(w.events) || !Array.isArray(w.evidence) || !Array.isArray(w.transactions)) errs.push("목록 형식 오류");
-  (w.prices ?? []).forEach((p, i) => { num(p.amount, `prices[${i}].amount`, false); date(p.basisDate, `prices[${i}].basisDate`); if (!["KRW", "KRW_10K", "KRW_100M"].includes(p.unit)) errs.push(`prices[${i}].unit: 단위 오류`); });
-  if (w.debt) { num(w.debt.amount, "debt.amount", false); date(w.debt.basisDate, "debt.basisDate"); }
+  num(w.property?.buildYear, "property.buildYear");
+  for (const k of ["events", "evidence", "transactions", "complexInfo", "attachments"] as const) if (!Array.isArray((w as any)[k])) errs.push(`${k}: 목록 형식 오류`);
+  if (w.reviewPrice) { num(w.reviewPrice.amount, "reviewPrice.amount", false); date(w.reviewPrice.basisDate, "reviewPrice.basisDate"); if (!["KRW", "KRW_10K", "KRW_100M"].includes(w.reviewPrice.unit)) errs.push("reviewPrice.unit: 단위 오류"); if (!["household", "perExclusiveM2", "perExclusivePyeong"].includes(w.reviewPrice.basis)) errs.push("reviewPrice.basis: 가격 기준 오류"); }
   for (const [k, v] of Object.entries(w.schedule ?? {})) date(v, `schedule.${k}`);
   (w.transactions ?? []).forEach((t, i) => { num(t.priceKrw, `transactions[${i}].priceKrw`, false); num(t.exclusiveAreaM2, `transactions[${i}].exclusiveAreaM2`, false); date(t.contractDate, `transactions[${i}].contractDate`); });
   (w.events ?? []).forEach((e, i) => (e.milestones ?? []).forEach((m, j) => { date(m.date, `events[${i}].milestones[${j}].date`); date(m.announcedOn, `events[${i}].milestones[${j}].announcedOn`); }));
@@ -82,15 +82,15 @@ const HEADER_MAP: Record<string, keyof RawTx> = {
   계약년월: "ym", dealym: "ym", 계약일자: "day",
   해제여부: "cancelled", cdealtype: "cancelled", cancelled: "cancelled",
   해제사유발생일: "cancelDate", cdealday: "cancelDate",
-  권역: "group", group: "group",
-  건축년도: "buildYear", buildyear: "buildYear",
+  법정동: "dong", umdnm: "dong", 동: "dong",
+  건축년도: "buildYear", 준공연도: "buildYear", buildyear: "buildYear",
 };
-interface RawTx { complexName?: string; area?: string; floor?: string; priceMan?: string; priceKrw?: string; contractDate?: string; ym?: string; day?: string; cancelled?: string; cancelDate?: string; group?: string; buildYear?: string }
+interface RawTx { complexName?: string; area?: string; floor?: string; priceMan?: string; priceKrw?: string; contractDate?: string; ym?: string; day?: string; cancelled?: string; cancelDate?: string; dong?: string; buildYear?: string }
 
 export interface ImportOutcome<T> { ok: boolean; items: T[]; errors: string[]; skipped: number }
 
 /** CSV 셀이 =,+,-,@ 로 시작해도 수식으로 해석하지 않고 숫자/텍스트로만 읽는다. */
-export function transactionsFromCsv(text: string, dataMode: DataMode = "user"): ImportOutcome<Transaction> {
+export function transactionsFromCsv(text: string, dataMode: DataMode = "user", source = "사용자 CSV"): ImportOutcome<Transaction> {
   const errors: string[] = [];
   if (isSecretLike(text)) return { ok: false, items: [], errors: ["비밀값·접속정보 형태의 값이 포함되어 파일 전체를 거절함"], skipped: 0 };
   let rows: string[][];
@@ -124,31 +124,31 @@ export function transactionsFromCsv(text: string, dataMode: DataMode = "user"): 
     items.push({
       key: newKey("tx"), complexName: raw.complexName.slice(0, 80), exclusiveAreaM2: area, floor: Number.isFinite(toNum(raw.floor)) ? toNum(raw.floor) : undefined,
       priceKrw: Math.round(price), contractDate: cd, cancelled: canc !== "" && canc !== "0" && canc.toLowerCase() !== "n" && canc !== "아니오",
-      cancelDate: raw.cancelDate || undefined, group: raw.group === "비교" || raw.group === "comparator" ? "comparator" : "target",
-      buildYear: Number.isFinite(toNum(raw.buildYear)) ? toNum(raw.buildYear) : undefined, dataMode,
+      cancelDate: raw.cancelDate || undefined, dong: raw.dong ? raw.dong.slice(0, 40) : undefined,
+      buildYear: Number.isFinite(toNum(raw.buildYear)) ? toNum(raw.buildYear) : undefined, dataMode, source: source.slice(0, 120),
     });
   });
   return { ok: items.length > 0, items, errors, skipped };
 }
 
 // ── 일반 JSON(사건·근거·거래·지수)
-export interface GeneralJsonImport { events: LocationEvent[]; evidence: Evidence[]; transactions: Transaction[]; indexComparisons: IndexComparisonInput[] }
+export interface GeneralJsonImport { events: LocationEvent[]; evidence: Evidence[]; transactions: Transaction[] }
 
 export function generalJsonImport(data: unknown): { ok: boolean; result?: GeneralJsonImport; errors: string[] } {
   const issues = scanSafety(data, { urlAllowedKeys: FREE_TEXT_KEYS });
   if (issues.length) return { ok: false, errors: issues.map((i) => `${i.path}: ${i.message}`) };
-  if (!data || typeof data !== "object" || Array.isArray(data)) return { ok: false, errors: ["{ events, evidence, transactions, indexComparisons } 형태의 객체가 필요함"] };
+  if (!data || typeof data !== "object" || Array.isArray(data)) return { ok: false, errors: ["{ events, evidence, transactions } 형태의 객체가 필요함"] };
   const d = data as any;
-  const allowed = new Set(["documentType", "events", "evidence", "transactions", "indexComparisons", "dataMode"]);
+  const allowed = new Set(["events", "evidence", "transactions", "dataMode", "source"]);
   const extra = Object.keys(d).filter((k) => !allowed.has(k));
   if (extra.length) return { ok: false, errors: [`알 수 없는 최상위 필드: ${extra.join(", ")}`] };
   const mode: DataMode = d.dataMode === "demo" ? "demo" : "user";
   const errs: string[] = [];
   const arr = (x: unknown) => (Array.isArray(x) ? x : x === undefined ? [] : (errs.push("목록 형식 오류"), []));
   const events: LocationEvent[] = arr(d.events).map((e: any) => ({
-    key: newKey("ev"), category: ["transport", "employment", "supply"].includes(e.category) ? e.category : "transport", name: String(e.name ?? "이름 없음").slice(0, 120),
+    key: newKey("ev"), category: ["transport", "amenity", "development", "supply"].includes(e.category) ? e.category : "development", name: String(e.name ?? "이름 없음").slice(0, 120),
     direction: ["favorable", "adverse", "mixed", "unknown"].includes(e.direction) ? e.direction : "unknown",
-    location: e.location && Number.isFinite(e.location.lat) && Number.isFinite(e.location.lng) ? { lat: e.location.lat, lng: e.location.lng, label: e.location.label } : undefined,
+    location: e.location && Number.isFinite(e.location.lat) && Number.isFinite(e.location.lng) ? { lat: e.location.lat, lng: e.location.lng } : undefined,
     milestones: (Array.isArray(e.milestones) ? e.milestones : []).map((m: any) => ({ key: newKey("ms"), type: m.type ?? "other", status: m.status === "actual" ? "actual" : "planned", date: m.date, announcedOn: m.announcedOn, collectedOn: m.collectedOn, note: m.note, evidenceKeys: [] })),
     access: e.access, supply: e.supply, evidenceKeys: [], dataMode: mode, note: e.note,
   }));
@@ -158,10 +158,9 @@ export function generalJsonImport(data: unknown): { ok: boolean; result?: Genera
   }));
   const transactions: Transaction[] = arr(d.transactions).flatMap((t: any) => {
     if (!t || typeof t.complexName !== "string" || !(t.exclusiveAreaM2 > 0) || !(t.priceKrw > 0) || !parseDateValue(t.contractDate)) { errs.push("거래 1건 형식 오류 — 건너뜀"); return []; }
-    return [{ key: newKey("tx"), complexName: t.complexName, exclusiveAreaM2: t.exclusiveAreaM2, floor: t.floor, priceKrw: Math.round(t.priceKrw), contractDate: t.contractDate, cancelled: !!t.cancelled, cancelDate: t.cancelDate, group: t.group === "comparator" ? "comparator" : "target", buildYear: t.buildYear, dataMode: mode } as Transaction];
+    return [{ key: newKey("tx"), complexName: t.complexName, dong: typeof t.dong === "string" ? t.dong : undefined, exclusiveAreaM2: t.exclusiveAreaM2, floor: t.floor, priceKrw: Math.round(t.priceKrw), contractDate: t.contractDate, cancelled: !!t.cancelled, cancelDate: t.cancelDate, buildYear: t.buildYear, dataMode: mode, source: String(d.source ?? "사용자 JSON").slice(0, 120) } as Transaction];
   });
-  const indexComparisons: IndexComparisonInput[] = arr(d.indexComparisons).map((i: any) => ({ key: newKey("idx"), label: String(i.label ?? "지수 비교"), periodStart: i.periodStart, periodEnd: i.periodEnd, targetStart: Number(i.targetStart), targetEnd: Number(i.targetEnd), comparatorStart: Number(i.comparatorStart), comparatorEnd: Number(i.comparatorEnd), source: String(i.source ?? "출처 미기재"), dataMode: mode }));
-  return { ok: true, result: { events, evidence, transactions, indexComparisons }, errors: errs.slice(0, 10) };
+  return { ok: true, result: { events, evidence, transactions }, errors: errs.slice(0, 10) };
 }
 
 // ── 파일 판별

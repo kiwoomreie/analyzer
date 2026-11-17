@@ -1,6 +1,6 @@
-// 가상 데모 자료. 모든 이름에 [가상]을 붙이고 dataMode="demo"로 표시한다.
-// 개수(사업장 5·사건 4)는 사용 흐름 시험용이며 통계적 타당성을 보장하는 표본이 아니다.
-import { emptyWorking, newKey, type Evidence, type LocationEvent, type Transaction, type WorkingInputs } from "./model.ts";
+// 가상 데모 자료(아파트 1건). 모든 이름에 [가상]을 붙이고 dataMode="demo"로 표시한다.
+// 사용 흐름 시험용이며 실제 시장·통계적 타당성과 무관하다.
+import { complexKeyOf, emptyWorking, newKey, type ComplexInfo, type Evidence, type LocationEvent, type Transaction, type WorkingInputs } from "./model.ts";
 
 function mulberry32(seed: number) {
   return () => {
@@ -11,116 +11,106 @@ function mulberry32(seed: number) {
   };
 }
 
-const COLLECTED = "2026-10-31";
+const C = "2026-10-31";
+const SRC = "[가상] 데모 거래 생성기";
 
-function demoEvidence(): Evidence[] {
-  return [
-    { key: "evd_demo_1", publisher: "[가상] 국토교통부", title: "[가상] 가람선 광역철도 기본계획 고시", sourceRef: "[가상] 고시 제2024-000호", publishedOn: "2024-02-20", effectiveOn: "2024-02-20", checkedOn: COLLECTED, pageOrSection: "[가상] 3쪽 2절", fact: "[가상] 가람선 신설역(가칭 누리역) 설치를 포함한 기본계획 고시", status: "confirmed", linked: ["ev_demo_rail"], dataMode: "demo" },
-    { key: "evd_demo_2", publisher: "[가상] 국가철도공단", title: "[가상] 가람선 사업 추진현황 보도자료", publishedOn: "2026-05-20", checkedOn: COLLECTED, pageOrSection: "[가상] 본문 2문단", fact: "[가상] 개통 목표를 2029년 12월에서 2031년 6월로 조정", status: "confirmed", linked: ["ev_demo_rail"], dataMode: "demo" },
-    { key: "evd_demo_3", publisher: "[가상] 누리시", title: "[가상] 첨단업무지구 개발계획 승인 공고", publishedOn: "2024-04-10", checkedOn: COLLECTED, fact: "[가상] 업무지구 개발계획 승인. 고용 규모는 계획 수치이며 입주 확정 아님", status: "needsApplicability", linked: ["ev_demo_biz"], dataMode: "demo" },
-    { key: "evd_demo_4", publisher: "[가상] 분양 광고", title: "[가상] 하늘마을 3블록 분양 안내", publishedOn: "2026-08-01", checkedOn: COLLECTED, fact: "[가상] 공급 세대수 표기가 인허가 자료와 다름", status: "inconsistent", linked: ["ev_demo_supply1"], dataMode: "demo" },
-  ];
-}
+const EVIDENCE: Evidence[] = [
+  { key: "evd_d1", publisher: "[가상] 국토교통부", title: "[가상] 가람선 광역철도 기본계획 고시", sourceRef: "[가상] 고시 제2024-000호", publishedOn: "2024-02-20", effectiveOn: "2024-02-20", checkedOn: C, pageOrSection: "[가상] 3쪽 2절", fact: "[가상] 누리역(가칭) 신설 포함", status: "confirmed", linked: ["ev_rail"], dataMode: "demo" },
+  { key: "evd_d2", publisher: "[가상] 국가철도공단", title: "[가상] 가람선 추진현황 보도자료", publishedOn: "2026-05-20", checkedOn: C, pageOrSection: "[가상] 본문 2문단", fact: "[가상] 개통 목표 2029년 12월 → 2031년 6월 조정", status: "confirmed", linked: ["ev_rail"], dataMode: "demo" },
+  { key: "evd_d3", publisher: "[가상] 누리시", title: "[가상] 첨단업무지구 개발계획 승인 공고", publishedOn: "2024-04-10", checkedOn: C, fact: "[가상] 개발계획 승인. 입주 기업은 미확정", status: "needsApplicability", linked: ["ev_biz"], dataMode: "demo" },
+  { key: "evd_d4", publisher: "[가상] 분양 광고", title: "[가상] 하늘마을 3블록 분양 안내", publishedOn: "2026-08-01", checkedOn: C, fact: "[가상] 세대수 표기가 인허가 자료와 다름", status: "inconsistent", linked: ["ev_sup1"], dataMode: "demo" },
+];
 
-function demoEvents(): LocationEvent[] {
-  return [
-    {
-      key: "ev_demo_rail", category: "transport", name: "[가상] 가람선 누리역 신설", direction: "favorable",
-      location: { lat: 37.4105, lng: 127.1290, label: "[가상] 누리역 예정지" },
-      milestones: [
-        { key: "ms_r1", type: "announcement", status: "actual", date: "2023-03-15", announcedOn: "2023-03-15", collectedOn: COLLECTED, evidenceKeys: [] },
-        { key: "ms_r2", type: "notice", status: "actual", date: "2024-02-20", announcedOn: "2024-02-20", collectedOn: COLLECTED, evidenceKeys: ["evd_demo_1"] },
-        { key: "ms_r3", type: "opening", status: "planned", date: "2029-12", announcedOn: "2024-02-20", collectedOn: COLLECTED, note: "[가상] 최초 개통 목표", evidenceKeys: ["evd_demo_1"] },
-        { key: "ms_r4", type: "constructionStart", status: "actual", date: "2025-06", announcedOn: "2025-06-30", collectedOn: COLLECTED, evidenceKeys: [] },
-        { key: "ms_r5", type: "delay", status: "planned", date: "2031-06", announcedOn: "2026-05-20", collectedOn: COLLECTED, note: "[가상] 개통 목표 조정", evidenceKeys: ["evd_demo_2"] },
-      ],
-      evidenceKeys: ["evd_demo_1", "evd_demo_2"], dataMode: "demo",
-    },
-    {
-      key: "ev_demo_biz", category: "employment", name: "[가상] 누리 첨단업무지구", direction: "favorable",
-      location: { lat: 37.4182, lng: 127.1405, label: "[가상] 업무지구 부지" },
-      milestones: [
-        { key: "ms_b1", type: "announcement", status: "actual", date: "2022-09-01", announcedOn: "2022-09-01", collectedOn: COLLECTED, evidenceKeys: [] },
-        { key: "ms_b2", type: "approval", status: "actual", date: "2024-04-10", announcedOn: "2024-04-10", collectedOn: COLLECTED, evidenceKeys: ["evd_demo_3"] },
-        { key: "ms_b3", type: "constructionStart", status: "planned", date: "2027-03", announcedOn: "2024-04-10", collectedOn: COLLECTED, evidenceKeys: [] },
-        { key: "ms_b4", type: "opening", status: "planned", date: "2030-06", announcedOn: "2024-04-10", collectedOn: COLLECTED, note: "[가상] 1단계 입주 목표", evidenceKeys: [] },
-      ],
-      evidenceKeys: ["evd_demo_3"], dataMode: "demo",
-    },
-    {
-      key: "ev_demo_supply1", category: "supply", name: "[가상] 하늘마을 3블록", direction: "adverse",
-      location: { lat: 37.4050, lng: 127.1200 },
-      milestones: [{ key: "ms_s1", type: "sale", status: "actual", date: "2026-09", announcedOn: "2026-08-01", collectedOn: COLLECTED, evidenceKeys: ["evd_demo_4"] }],
-      supply: { stage: "sale", households: 1200, areaMinM2: 59, areaMaxM2: 99, priceMinPerM2Krw: 9_000_000, priceMaxPerM2Krw: 10_500_000, saleDate: "2026-09", occupancyDate: "2029-03", demandGroups: ["신혼·자녀양육", "실수요 갈아타기"] },
-      evidenceKeys: ["evd_demo_4"], dataMode: "demo",
-    },
-    {
-      key: "ev_demo_supply2", category: "supply", name: "[가상] 강변 공공택지 B2", direction: "adverse",
-      location: { lat: 37.3990, lng: 127.1350 },
-      milestones: [{ key: "ms_s2", type: "permit", status: "planned", date: "2027-06", announcedOn: "2026-03-01", collectedOn: COLLECTED, evidenceKeys: [] }],
-      supply: { stage: "permit", households: 800, areaMinM2: 74, areaMaxM2: 114, saleDate: "2028-03", demandGroups: ["실수요 갈아타기"] },
-      evidenceKeys: [], dataMode: "demo",
-    },
-  ];
-}
+const EVENTS: LocationEvent[] = [
+  {
+    key: "ev_rail", category: "transport", name: "[가상] 가람선 누리역 신설", direction: "favorable", location: { lat: 37.4105, lng: 127.129 },
+    milestones: [
+      { key: "m1", type: "announcement", status: "actual", date: "2023-03-15", announcedOn: "2023-03-15", collectedOn: C, evidenceKeys: [] },
+      { key: "m2", type: "notice", status: "actual", date: "2024-02-20", announcedOn: "2024-02-20", collectedOn: C, evidenceKeys: ["evd_d1"] },
+      { key: "m3", type: "opening", status: "planned", date: "2029-12", announcedOn: "2024-02-20", collectedOn: C, note: "[가상] 최초 개통 목표", evidenceKeys: ["evd_d1"] },
+      { key: "m4", type: "constructionStart", status: "actual", date: "2025-06", announcedOn: "2025-06-30", collectedOn: C, evidenceKeys: [] },
+      { key: "m5", type: "delay", status: "planned", date: "2031-06", announcedOn: "2026-05-20", collectedOn: C, note: "[가상] 개통 목표 조정", evidenceKeys: ["evd_d2"] },
+    ],
+    evidenceKeys: ["evd_d1", "evd_d2"], dataMode: "demo",
+  },
+  {
+    key: "ev_mall", category: "amenity", name: "[가상] 누리 복합쇼핑몰", direction: "favorable", location: { lat: 37.4142, lng: 127.1235 },
+    milestones: [
+      { key: "a1", type: "permit", status: "actual", date: "2025-09", announcedOn: "2025-09-12", collectedOn: C, evidenceKeys: [] },
+      { key: "a2", type: "opening", status: "planned", date: "2028-03", announcedOn: "2025-09-12", collectedOn: C, evidenceKeys: [] },
+    ],
+    evidenceKeys: [], dataMode: "demo",
+  },
+  {
+    key: "ev_biz", category: "development", name: "[가상] 누리 첨단업무지구", direction: "favorable", location: { lat: 37.4182, lng: 127.1405 },
+    milestones: [
+      { key: "b1", type: "announcement", status: "actual", date: "2022-09-01", announcedOn: "2022-09-01", collectedOn: C, evidenceKeys: [] },
+      { key: "b2", type: "approval", status: "actual", date: "2024-04-10", announcedOn: "2024-04-10", collectedOn: C, evidenceKeys: ["evd_d3"] },
+      { key: "b3", type: "opening", status: "planned", date: "2030-06", announcedOn: "2024-04-10", collectedOn: C, note: "[가상] 1단계 준공 목표", evidenceKeys: [] },
+    ],
+    evidenceKeys: ["evd_d3"], dataMode: "demo",
+  },
+  {
+    key: "ev_sup1", category: "supply", name: "[가상] 하늘마을 3블록", direction: "adverse", location: { lat: 37.405, lng: 127.12 },
+    milestones: [{ key: "s1", type: "sale", status: "actual", date: "2026-09", announcedOn: "2026-08-01", collectedOn: C, evidenceKeys: ["evd_d4"] }],
+    supply: { stage: "sale", households: 1200, areaMinM2: 59, areaMaxM2: 99, saleDate: "2026-09", occupancyDate: "2029-03" },
+    evidenceKeys: ["evd_d4"], dataMode: "demo",
+  },
+  {
+    key: "ev_sup2", category: "supply", name: "[가상] 강변 공공택지 B2", direction: "adverse", location: { lat: 37.399, lng: 127.135 },
+    milestones: [{ key: "s2", type: "permit", status: "planned", date: "2027-06", announcedOn: "2026-03-01", collectedOn: C, evidenceKeys: [] }],
+    supply: { stage: "permit", households: 800, areaMinM2: 74, areaMaxM2: 114, saleDate: "2028-03" },
+    evidenceKeys: [], dataMode: "demo",
+  },
+];
 
-function demoTransactions(seed: number): Transaction[] {
-  const rnd = mulberry32(seed);
-  const out: Transaction[] = [];
-  const complexes = { target: ["[가상] 가람마을 1단지", "[가상] 가람마을 2단지", "[가상] 누리숲 아파트", "[가상] 은빛마을"], comparator: ["[가상] 동편마을 A", "[가상] 동편마을 B", "[가상] 서촌 아파트"] };
-  for (let y = 2021; y <= 2026; y++) {
-    for (let m = 1; m <= 12; m++) {
+/** [가상] 단지: 이름, 법정동, 준공연도, 좌표, 기준 ㎡당 단가, 월 평균 거래 */
+const COMPLEXES: [string, string, number, number, number, number, number][] = [
+  ["[가상] 가람마을 1단지", "[가상] 가람동", 2019, 37.4131, 127.1272, 9_400_000, 1.4],
+  ["[가상] 가람마을 2단지", "[가상] 가람동", 2020, 37.4098, 127.1301, 9_600_000, 1.2],
+  ["[가상] 누리숲 아파트", "[가상] 새솔동", 2016, 37.4165, 127.1312, 8_900_000, 1.0],
+  ["[가상] 은빛마을", "[가상] 가람동", 2012, 37.4081, 127.1215, 8_100_000, 0.9],
+  ["[가상] 새솔 센트럴", "[가상] 새솔동", 2022, 37.4190, 127.1260, 10_200_000, 0.7],
+  ["[가상] 동편마을 A", "[가상] 동편동", 2018, 37.4010, 127.1500, 8_500_000, 1.3],
+  ["[가상] 옛터 주공", "[가상] 가람동", 1994, 37.4115, 127.1240, 6_900_000, 1.0],
+  ["[가상] 작은숲 빌", "[가상] 새솔동", 2021, 37.4150, 127.1285, 9_800_000, 0.08],
+];
+
+function demoTransactions(): { tx: Transaction[]; info: ComplexInfo[] } {
+  const rnd = mulberry32(42);
+  const tx: Transaction[] = [];
+  const info: ComplexInfo[] = [];
+  for (const [name, dong, by, lat, lng, base, rate] of COMPLEXES) {
+    info.push({ complexKey: complexKeyOf({ complexName: name, dong }), location: { lat, lng } });
+    for (let y = 2021; y <= 2026; y++) for (let m = 1; m <= 12; m++) {
       if (y === 2026 && m > 10) break;
       const t = (y - 2021) * 12 + m - 1;
-      const post = t >= 26; // 2023-03 이후
-      for (const group of ["target", "comparator"] as const) {
-        const n = 2 + Math.floor(rnd() * 4);
-        for (let i = 0; i < n; i++) {
-          const area = [59.9, 84.9, 84.97, 101.9][Math.floor(rnd() * 4)];
-          const base = group === "target" ? 8_600_000 : 8_300_000;
-          const trend = group === "target" ? (post ? 0.0042 : 0.0015) : (post ? 0.003 : 0.0015);
-          const perM2 = base * (1 + trend * t) * (0.93 + rnd() * 0.14);
-          const day = 1 + Math.floor(rnd() * 27);
-          out.push({
-            key: newKey("tx"), complexName: complexes[group][Math.floor(rnd() * complexes[group].length)], exclusiveAreaM2: area, floor: 1 + Math.floor(rnd() * 25),
-            priceKrw: Math.round((perM2 * area) / 1e5) * 1e5, contractDate: `${y}-${String(m).padStart(2, "0")}-${String(day).padStart(2, "0")}`,
-            cancelled: rnd() < 0.04, group, dataMode: "demo",
-          });
-        }
+      const trend = 1 + (t >= 26 ? 0.0035 : 0.0012) * t;
+      const n = Math.floor(rate + rnd());
+      for (let i = 0; i < n; i++) {
+        const area = [59.98, 84.95, 84.99, 101.9][Math.floor(rnd() * 4)];
+        const perM2 = base * trend * (0.94 + rnd() * 0.12);
+        tx.push({
+          key: newKey("tx"), complexName: name, dong, exclusiveAreaM2: area, floor: 1 + Math.floor(rnd() * 25), priceKrw: Math.round((perM2 * area) / 1e5) * 1e5,
+          contractDate: `${y}-${String(m).padStart(2, "0")}-${String(1 + Math.floor(rnd() * 27)).padStart(2, "0")}`, cancelled: rnd() < 0.04, buildYear: by, dataMode: "demo", source: SRC,
+        });
       }
     }
   }
-  return out;
+  return { tx, info };
 }
 
-interface DemoSite { name: string; address: string; lat: number; lng: number; area: number; type: string; proposedEok: number; maturity: string; saleStart: string; completion: string; appraisalEok?: number; debtEok?: number; decline?: number; delay?: number }
-
-const SITES: DemoSite[] = [
-  { name: "[가상] 누리역 A1 공동주택", address: "[가상] 누리시 가람동 100", lat: 37.4120, lng: 127.1260, area: 84, type: "84A", proposedEok: 8.4, maturity: "2030-11", saleStart: "2027-03", completion: "2029-12", appraisalEok: 1000, debtEok: 600, decline: 10, delay: 24 },
-  { name: "[가상] 가람동 B3 공동주택", address: "[가상] 누리시 가람동 220", lat: 37.4075, lng: 127.1330, area: 59, type: "59B", proposedEok: 5.9, maturity: "2029-06", saleStart: "2026-12", completion: "2029-03", decline: 15 },
-  { name: "[가상] 업무지구 인근 C2", address: "[가상] 누리시 새솔동 15", lat: 37.4200, lng: 127.1440, area: 101, type: "101A", proposedEok: 10.8, maturity: "2031-09", saleStart: "2027-09", completion: "2030-09", appraisalEok: 1450 },
-  { name: "[가상] 동편 D1 공동주택", address: "[가상] 누리시 동편동 7", lat: 37.4010, lng: 127.1500, area: 84, type: "84B", proposedEok: 7.6, maturity: "2030-03", saleStart: "2027-01", completion: "2029-09", delay: 12 },
-  { name: "[가상] 강변 E5 공동주택", address: "[가상] 누리시 강변동 31", lat: 37.3970, lng: 127.1210, area: 74, type: "74A", proposedEok: 6.9, maturity: "2030-12", saleStart: "2027-06", completion: "2030-06" },
-];
-
-export function demoWorkings(): { title: string; working: WorkingInputs }[] {
-  return SITES.map((s, i) => {
-    const w = emptyWorking("2026-10-31", "apartment");
-    w.property = { displayName: s.name, address: s.address, coordinates: { lat: s.lat, lng: s.lng, senderVerified: false }, assetType: "apartment", exclusiveAreaM2: s.area, comparisonType: s.type, targetDemand: ["신혼·자녀양육", "실수요 갈아타기"] };
-    w.prices = [{ key: "price_1", kind: "proposedSalePrice", amount: s.proposedEok, unit: "KRW_100M", basis: "household", basisDate: "2026-10", dataMode: "demo" }];
-    if (s.appraisalEok) w.prices.push({ key: "price_2", kind: "appraisalValue", amount: s.appraisalEok, unit: "KRW_100M", basis: "project", basisDate: "2026-09-30", dataMode: "demo" });
-    if (s.debtEok) {
-      w.debt = { amount: s.debtEok, unit: "KRW_100M", definition: "loanBalance", seniorStatus: "confirmedNone", basisDate: "2026-09-30", dataMode: "demo" };
-      w.ltvChecks.collateralScopeConfirmed = true;
-    }
-    w.schedule = { saleStart: s.saleStart, completion: s.completion, maturity: s.maturity, expectedDisposal: s.maturity };
-    w.scenario = { name: "[가상] 기본 점검", ...(s.decline ? { priceDeclinePct: s.decline } : {}), ...(s.delay ? { eventDelayMonths: s.delay } : {}) };
-    w.options.purpose = "[가상] 사용 흐름 시험";
-    w.appraisalNote = i === 0 ? "[가상] 평가서에 광역철도 계획을 입지 장점으로 서술(반영 비율 미기재)" : undefined;
-    w.events = demoEvents();
-    w.evidence = demoEvidence();
-    w.transactions = demoTransactions(1000 + i);
-    w.indexComparisons = i === 0 ? [{ key: "idx_demo", label: "[가상] 권역 지수 비교 예시", periodStart: "2023-03", periodEnd: "2026-09", targetStart: 100, targetEnd: 112, comparatorStart: 100, comparatorEnd: 108, source: "[가상] 검증용 산술 예시", dataMode: "demo" }] : [];
-    return { title: s.name, working: w };
-  });
+export function demoWorking(): WorkingInputs {
+  const w = emptyWorking("[가상] 누리시 가람동 100", C);
+  w.property = { address: "[가상] 누리시 가람동 100", displayName: "[가상] 누리역 A1 공동주택", coordinates: { lat: 37.412, lng: 127.126, source: "[가상] 데모 좌표" }, exclusiveAreaM2: 84, buildYear: 2029, comparisonType: "84A" };
+  w.reviewPrice = { amount: 9.6, unit: "KRW_100M", basis: "household", basisDate: "2026-10", label: "[가상] 제시 분양가", dataMode: "demo" };
+  w.schedule = { saleStart: "2027-03", completion: "2029-12" };
+  w.appraisalNote = "[가상] 분양가 산정 자료에 광역철도 계획을 입지 장점으로 서술(반영 비율 미기재)";
+  w.events = structuredClone(EVENTS);
+  w.evidence = structuredClone(EVIDENCE);
+  const { tx, info } = demoTransactions();
+  w.transactions = tx;
+  w.complexInfo = info;
+  w.dataLog = [{ at: C, source: "[가상] 데모", detail: "가상 단지 8곳 거래·입지 사건 5건 생성" }];
+  return w;
 }
