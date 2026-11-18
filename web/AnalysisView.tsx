@@ -16,6 +16,8 @@ export type StorageKind = "server-temporary" | "browser-local" | "draft";
 
 export interface SectionProps {
   rec: AnalysisRecord;
+  /** 비동기 작업(조회·가져오기)이 끝난 시점의 최신 기록 — 오래된 사본으로 덮어쓰지 않기 위함 */
+  getRec: () => AnalysisRecord | null;
   update: (fn: (w: WorkingInputs) => void) => void;
   setRec: (r: AnalysisRecord) => void;
   session: SessionInfo | null;
@@ -34,13 +36,16 @@ export function AnalysisView({ storage, recKey, session }: { storage: StorageKin
   const [saveError, setSaveError] = useState<string | null>(null);
   const [memoryOnly, setMemoryOnly] = useState(false);
   const timer = useRef<any>(null);
+  /** 항상 최신 기록을 가리킴(비동기 응답이 오래된 화면 상태로 덮어쓰지 않도록) */
+  const recRef = useRef<AnalysisRecord | null>(null);
+  const load = (r: AnalysisRecord) => { recRef.current = r; setRecState(r); };
 
   useEffect(() => {
-    if (storage === "server-temporary") getTemp(recKey).then((r) => setRecState(migrateRecord(r.record))).catch((e) => setError(e.message));
+    if (storage === "server-temporary") getTemp(recKey).then((r) => load(migrateRecord(r.record))).catch((e) => setError(e.message));
     else {
       let r = storage === "browser-local" ? localStore.get(recKey) : draftStore.get(recKey);
       if (!r && storage === "draft" && memoryDrafts.has(recKey)) { r = memoryDrafts.get(recKey)!; setMemoryOnly(true); }
-      r ? setRecState(r) : setError(storage === "draft" ? "저장 전 작업을 찾을 수 없음(탭을 닫았거나 새로고침으로 사라짐)" : !localStore.available() ? "이 브라우저 저장소를 사용할 수 없어 저장된 분석을 열 수 없음" : "이 브라우저에 저장된 분석을 찾을 수 없음");
+      r ? load(r) : setError(storage === "draft" ? "저장 전 작업을 찾을 수 없음(탭을 닫았거나 새로고침으로 사라짐)" : !localStore.available() ? "이 브라우저 저장소를 사용할 수 없어 저장된 분석을 열 수 없음" : "이 브라우저에 저장된 분석을 찾을 수 없음");
     }
   }, [storage, recKey]);
 
@@ -63,14 +68,16 @@ export function AnalysisView({ storage, recKey, session }: { storage: StorageKin
       setSaveState(storage === "browser-local" ? `이 브라우저에 저장됨 ${new Date().toLocaleTimeString("ko-KR")}` : "아직 저장 전 — ‘이 브라우저에 저장’을 누르십시오");
     }, 400);
   };
-  const setRec = (r: AnalysisRecord) => { setRecState(r); persist(r); };
+  const setRec = (r: AnalysisRecord) => { recRef.current = r; setRecState(r); persist(r); };
+  /** 최신 기록(recRef)에 변경을 적용 — 응답 대기 중 사용자가 바꾼 값이 사라지지 않음 */
   const update = (fn: (w: WorkingInputs) => void) => {
-    if (!rec) return;
-    const w = structuredClone(rec.working);
+    const cur = recRef.current;
+    if (!cur) return;
+    const w = structuredClone(cur.working);
     fn(w);
     const issues = scanWorking(w);
     if (issues.length) { setSaveState(`입력 거절: ${issues[0].path} — ${issues[0].message}`); return; }
-    setRec({ ...rec, working: w, updatedAt: seoulNowIso(), title: titleFor(w) });
+    setRec({ ...cur, working: w, updatedAt: seoulNowIso(), title: titleFor(w) });
   };
 
   const lr = useMemo(() => (rec ? latestRun(rec) : null), [rec]);
@@ -94,7 +101,7 @@ export function AnalysisView({ storage, recKey, session }: { storage: StorageKin
     else draftStore.remove(rec.key);
     navigate("/app");
   };
-  const props: SectionProps = { rec, update, setRec, session };
+  const props: SectionProps = { rec, getRec: () => recRef.current, update, setRec, session };
 
   return (
     <main className="view">
@@ -114,7 +121,7 @@ export function AnalysisView({ storage, recKey, session }: { storage: StorageKin
           </dl>
         </div>
         <div className="actions">
-          <button onClick={() => setRec(withRun(rec, "manual"))} data-testid="rerun" className={stale ? "primary" : ""}>분석 다시 실행</button>
+          <button onClick={() => setRec(withRun(recRef.current ?? rec, "manual"))} data-testid="rerun" className={stale ? "primary" : ""}>분석 다시 실행</button>
           {storage !== "browser-local" && <button onClick={saveToBrowser} data-testid="save-browser" className="primary">이 브라우저에 저장</button>}
           <button onClick={() => download(`apartment-analysis-${seoulToday()}.json`, JSON.stringify(makeBackup([rec], seoulNowIso()), null, 1), "application/json")} data-testid="export-json">JSON 내보내기</button>
           <button onClick={remove} className="danger" data-testid="delete">삭제</button>

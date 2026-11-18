@@ -56,7 +56,11 @@ export async function collectPublicData(cfg: AppConfig, body: any, pd?: SafeFetc
   extra.forEach((c: string) => { if (!regionMap.has(c)) regionMap.set(c, { code: c, name1: "", name2: "" }); });
   const regions = [...regionMap.values()].slice(0, LIMITS.regions);
   rd.regionsUsed = regions.length;
-  if (regionMap.size > LIMITS.regions) { rd.capped = true; rd.note += ` · 시군구 ${regionMap.size}곳 중 ${LIMITS.regions}곳만 수집(상한)`; }
+  if (regionMap.size > LIMITS.regions) {
+    rd.capped = true;
+    if (rd.status === "sampled") rd.status = "partial"; // 상한으로 누락 가능 → 상태와 경고를 일치
+    rd.note += ` · 시군구 ${regionMap.size}곳 중 ${LIMITS.regions}곳만 수집(상한) — 나머지 시군구의 반경 내 단지 누락 가능`;
+  }
 
   // 3) 거래 응답 수집·건수 대사
   const monthResults: Awaited<ReturnType<typeof fetchMolitMonth>>[] = [];

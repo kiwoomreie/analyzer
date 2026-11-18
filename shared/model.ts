@@ -168,6 +168,10 @@ export interface Transaction {
   aptDong?: string;
   /** 원천 거래 식별자(있을 때만). 국토부 아파트 매매 API에는 거래 단위 공식 식별자가 없음 */
   officialId?: string;
+  /** 식별자를 발급한 출처 범위(예: 기관·시스템 이름). 없으면 ‘출처 미지정’으로 보고 자동 정정하지 않음 */
+  idScope?: string;
+  /** 같은 조건 묶음에서 해제 대상을 특정할 수 없었음(묶음 크기·해제 건수) */
+  cancelAmbiguity?: { size: number; cancelled: number };
   /** 중복 판별 키(tradeMerge.ts) */
   idKey?: string;
   idBasis?: "official" | "composite";
@@ -176,7 +180,7 @@ export interface Transaction {
   /** 같은 조건 묶음의 크기(2 이상이면 기록된 정보로 서로 구별 불가) */
   sameKeyCount?: number;
   /** 확인 필요 표시(예: 금액만 다른 같은 조건 거래 — 별도 거래인지 정정인지 미확정) */
-  reviewFlag?: { kind: "possibleCorrection"; base: string; note: string };
+  reviewFlag?: { kind: "possibleCorrection" | "idConflict" | "idChangeUnconfirmed"; base: string; note: string };
   exclusiveAreaM2: number;
   floor?: number;
   priceKrw: number;
@@ -279,7 +283,12 @@ export interface CollectionReport {
 
 /** 이전 버전 수집 보고 변환 */
 export function migrateCollection(c: any): CollectionReport {
-  if (c.trades && c.regionDiscovery) return c;
+  if (c.trades && c.regionDiscovery) {
+    // v0.4: 상한에 걸렸는데 ‘표본 확인’으로 남은 기록 → ‘일부’로 맞춤(원 기록의 다른 값은 유지)
+    if (c.regionDiscovery.capped && c.regionDiscovery.status === "sampled") return { ...c, regionDiscovery: { ...c.regionDiscovery, status: "partial" } };
+    if (c.complexGeocode?.capped && c.complexGeocode.status === "complete") return { ...c, complexGeocode: { ...c.complexGeocode, status: "partial" } };
+    return c;
+  }
   const months = c.months ?? [];
   const ok = months.filter((m: any) => m.ok).length;
   return {
@@ -304,6 +313,14 @@ export interface MergeReport {
   possibleCorrections: number;
   /** 기존보다 적게 들어온 같은 조건 묶음(부분 자료 가능) */
   partialGroups: number;
+  /** 같은 배치 안에서 같은 출처·ID·같은 내용으로 반복된 건수(1건만 보존) */
+  idDuplicatesInBatch: number;
+  /** 같은 출처·ID인데 내용·지역·단지가 충돌해 병합하지 않고 확인 필요로 보존한 건수 */
+  idConflicts: number;
+  /** 출처 미지정 ID의 값 변경 — 자동 반영하지 않고 확인 필요로 보류한 건수 */
+  idChangesHeld: number;
+  /** 이미 저장된 같은 ID·같은 내용 사본에 함께 반영한 건수 */
+  storedDuplicatesUpdated: number;
   sameKeyGroups: number;
   notes: string[];
 }

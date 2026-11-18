@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { getSession, getSessionError, lookupPublicData, type SessionInfo } from "./api.ts";
 import { draftStore, localStore, memoryDrafts } from "./store.ts";
 import { AnalysisView } from "./AnalysisView.tsx";
-import { navigate, withRun } from "./nav.ts";
+import { currentPath, navigate, PREVIEW, withRun } from "./nav.ts";
 import { DateText, Num, Select, Text, download } from "./components.tsx";
 import { LABELS, type MoneyUnit } from "../shared/contract.ts";
 import { APP_NAME, emptyWorking, newKey, newManualRecord, ORIGIN_LABEL, type AnalysisRecord, type ReviewPrice } from "../shared/model.ts";
@@ -13,11 +13,12 @@ import { seoulNowIso, seoulToday } from "../shared/dates.ts";
 import { applyLookup } from "../shared/applyData.ts";
 
 function App() {
-  const [path, setPath] = useState(location.pathname);
+  const [path, setPath] = useState(currentPath());
   const [sess, setSess] = useState<SessionInfo | null>(null);
   useEffect(() => {
-    const on = () => setPath(location.pathname);
+    const on = () => setPath(currentPath());
     window.addEventListener("popstate", on);
+    window.addEventListener("hashchange", on);
     window.addEventListener("la:navigate", on);
     getSession().then(setSess);
     return () => { window.removeEventListener("popstate", on); window.removeEventListener("la:navigate", on); };
@@ -26,6 +27,7 @@ function App() {
   return (
     <div className="app">
       <header className="top">
+        {PREVIEW && <span className="badge tone-warn" data-testid="preview-badge">미리보기(서버 없음)</span>}
         <a className="brand" href="/app" onClick={(e: any) => { e.preventDefault(); navigate("/app"); }}><b>{APP_NAME}</b></a>
         <span className="muted small">주소로 시작 · 입지 변화 / 실거래 비교 / 확인할 사항 · 협의체와 별도로 사용</span>
       </header>
@@ -42,6 +44,8 @@ function Home({ session }: { session: SessionInfo | null }) {
   const [msg, setMsg] = useState<{ tone: "ok" | "bad" | "info"; text: string; list?: string[] } | null>(null);
   const [more, setMore] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [health, setHealth] = useState(() => localStore.health());
+  const [exported, setExported] = useState(false);
   const [f, setF] = useState<NewForm>({ unit: "KRW_100M", basis: "household", asOf: seoulToday() });
   const autoLookup = session?.config.publicData === "configured" || session?.config.geocoder === "configured";
 
@@ -98,6 +102,21 @@ function Home({ session }: { session: SessionInfo | null }) {
   return (
     <main className="home">
       {!session && getSessionError() && <div className="banner warn">{getSessionError()}</div>}
+      {health.state === "unreadable" && (
+        <div className="banner bad" data-testid="store-unreadable">
+          <b>저장된 분석 원문을 읽을 수 없습니다.</b> {health.message} 새 저장은 원문 보호를 위해 차단되며, 원문은 자동으로 지우지 않습니다.
+          <div className="toolbar">
+            <button onClick={() => { download(`apartment-analyzer-storage-raw-${seoulToday()}.txt`, localStore.exportRaw() ?? "", "text/plain;charset=utf-8"); setExported(true); }} data-testid="export-raw">원문 내보내기(그대로)</button>
+            <button disabled={!exported} title={exported ? "" : "먼저 원문을 내보내십시오"} onClick={() => { const r = localStore.quarantineAndReset(); setMsg(r.error ? { tone: "bad", text: r.error } : { tone: "ok", text: `손상 원문을 보관 키(${r.quarantineKey})에 복사·확인한 뒤 새 저장소로 시작했습니다. 원문은 지우지 않았습니다.` }); setHealth(localStore.health()); setLocals(localStore.list()); }} data-testid="quarantine">손상 원문 보관 후 새로 시작</button>
+          </div>
+        </div>
+      )}
+      {health.state === "partial" && (
+        <div className="banner warn" data-testid="store-partial">
+          {health.message}
+          <div className="toolbar"><button onClick={() => download(`apartment-analyzer-damaged-records-${seoulToday()}.json`, JSON.stringify(localStore.exportBad(), null, 1), "application/json")} data-testid="export-bad">손상 기록 원문 내보내기</button></div>
+        </div>
+      )}
       {msg && <div className={`banner ${msg.tone}`} data-testid="home-message">{msg.text}{msg.list?.length ? <ul>{msg.list.map((l, i) => <li key={i}><code>{l}</code></li>)}</ul> : null}</div>}
       <section className="card start">
         <h2>새 분석</h2>
@@ -140,6 +159,8 @@ function Home({ session }: { session: SessionInfo | null }) {
         {drafts.length > 0 && <p className="small">저장 전 작업: {drafts.map((r) => <button key={r.key} className="link" onClick={() => navigate(`/app/d/${r.key}`)}>{r.title}</button>)}</p>}
       </section>
 
+      <KeyLimits session={session} />
+
       <section className="card small">
         <h2>설정 상태</h2>
         <ul className="status-list">
@@ -150,6 +171,29 @@ function Home({ session }: { session: SessionInfo | null }) {
         </ul>
       </section>
     </main>
+  );
+}
+
+/** 국토부·카카오 키가 없을 때 제한되는 기능(미리보기에서도 항상 표시) */
+export function KeyLimits({ session }: { session: SessionInfo | null }) {
+  const molit = session?.config.publicData === "configured";
+  const kakao = session?.config.geocoder === "configured";
+  if (molit && kakao) return null;
+  return (
+    <section className="card small" data-testid="key-limits">
+      <h2>API 키가 없어 제한되는 기능 {!session && <span className="badge tone-warn">서버 없이 미리보기 중</span>}</h2>
+      <table className="tbl">
+        <thead><tr><th>기능</th><th>필요한 키</th><th>상태</th><th>대신 할 수 있는 방법</th></tr></thead>
+        <tbody>
+          <tr><td>주소 → 좌표 자동 변환</td><td>카카오 로컬(REST)</td><td>{kakao ? "설정됨" : "사용 불가"}</td><td>‘입력·세부 설정’에서 본건 좌표 직접 입력</td></tr>
+          <tr><td>인근 아파트 실거래 자동 수집(전 페이지·건수 대사)</td><td>국토교통부 실거래가(공공데이터포털)</td><td>{molit ? "설정됨" : "사용 불가"}</td><td>실거래 CSV 가져오기(국토부 실거래가 공개시스템에서 내려받은 자료 등)</td></tr>
+          <tr><td>반경 주변 시군구 탐색(17개 표본 지점)</td><td>카카오 로컬(REST)</td><td>{kakao ? "설정됨" : "사용 불가"}</td><td>CSV에 주변 시군구 거래를 함께 넣기</td></tr>
+          <tr><td>비교단지 좌표·거리 확인</td><td>카카오 로컬(REST)</td><td>{kakao ? "설정됨" : "사용 불가"}</td><td>‘실거래·비교단지 상세’에서 단지별 거리(m) 직접 입력 — 거리 미확인 단지는 대표 통계에서 제외</td></tr>
+          <tr><td>지도 표시</td><td>카카오 지도(JavaScript)</td><td>{session?.config.kakaoJsKey ? "설정됨" : "좌표 도식으로 대체"}</td><td>번호 마커 도식(실제 지도 아님)</td></tr>
+        </tbody>
+      </table>
+      <p className="muted">분석·저장·보고서는 키 없이도 동작합니다. 입지 뉴스·고시 자동 수집 기능은 키와 무관하게 없습니다(사용자 입력).</p>
+    </section>
   );
 }
 

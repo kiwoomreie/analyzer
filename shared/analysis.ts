@@ -9,6 +9,7 @@ import {
 import { deriveUnitPrices, fmtMan, fmtPct, m2ToPyeong, safeDivide, toKrw } from "./units.ts";
 import { LABELS } from "./contract.ts";
 import { migrateCollection, type CollectionReport } from "./model.ts";
+import { diagnoseTrades } from "./tradeMerge.ts";
 
 function collectionText(r: CollectionReport): string {
   const t = { complete: "완료", partial: "일부(누락 가능)", failed: "실패", unset: "미설정" }[r.trades.status];
@@ -65,6 +66,8 @@ export interface MarketResult {
   comparables: ComplexResult[];
   needsCheck: ComplexResult[];
   pooled: Stats;
+  /** 유효 표본 범위: certain=확정 표본, min~max=동조건 해제 대상 특정 불가 묶음을 포함한 가능 범위 */
+  sampleRange: { certain: number; min: number; max: number; uncertainGroups: number };
   excludedTrades: Record<string, number>;
   validTrades: number;
   txRows: { key: string; complexKey: string; included: boolean; reasons: string[]; perM2: number | null }[];
@@ -276,7 +279,7 @@ export function runAnalysis(w: WorkingInputs): AnalysisResult {
   if (supply.rows.length) summaryLocation.push({ key: "supply", text: `[주변 입주 물량] ${supply.rows.length}건 — ${supply.text}`, detail: supply.rows.map((s) => `${s.name}(${s.stage}${s.households ? `, ${s.households.toLocaleString("ko-KR")}세대` : ""})`).join(" · ") });
 
   const comparablesText = market.comparables.length
-    ? `대표 비교단지 ${market.comparables.length}개(최근 ${o.recentMonths}개월 ${area ? "유사면적 " : ""}거래 ${market.pooled.count}건, 중위 ${fmtMan(market.pooled.medianPerM2)}/전용㎡)`
+    ? `대표 비교단지 ${market.comparables.length}개(최근 ${o.recentMonths}개월 ${area ? "유사면적 " : ""}거래 ${market.sampleRange.uncertainGroups ? `확정 ${market.pooled.count}건, 유효 표본 ${market.sampleRange.min}~${market.sampleRange.max}건` : `${market.pooled.count}건`}, 중위 ${fmtMan(market.pooled.medianPerM2)}/전용㎡)`
     : `반경 내 거리 확인된 비교 가능 단지 없음 — 대표 비교단지를 억지로 채우지 않음${market.needsCheck.length ? `(거리 미확인 후보 ${market.needsCheck.length}곳)` : ""}`;
   const firstPre = events.find((e) => e.prepricing && e.prepricing.assessment !== "notApplicable");
 
@@ -382,10 +385,22 @@ function analyzeMarket(w: WorkingInputs, asOf: DateParts, area: number | null, c
   const excludedTrades: Record<string, number> = {};
   const infoByKey = new Map(w.complexInfo.map((c) => [c.complexKey, c]));
 
+  // 같은 ID 사본·충돌
+  const diag = diagnoseTrades(w.transactions);
+  const shadowKeys = new Set(diag.identicalGroups.flatMap((g) => g.keys.slice(1)));
+  const conflictKeys = new Set([...diag.conflictGroups.flatMap((g) => g.keys), ...w.transactions.filter((t) => t.reviewFlag?.kind === "idConflict").map((t) => t.key)]);
+  // 동조건 묶음에서 해제 대상 특정 불가 + 사용자 제외가 섞인 묶음 → 유효 표본 확정 불가
+  const ambGroups = new Map<string, Transaction[]>();
+  w.transactions.forEach((t) => { if (t.cancelAmbiguity && t.idKey) ambGroups.set(t.idKey, [...(ambGroups.get(t.idKey) ?? []), t]); });
+  const uncertainKeys = new Set<string>();
+  for (const members of ambGroups.values()) if (new Set(members.map((m) => m.manualExclusion ?? "")).size > 1) members.forEach((m) => uncertainKeys.add(m.key));
+  const baseReasonsByKey = new Map<string, string[]>();
+
   const txRows = w.transactions.map((t: Transaction) => {
     const reasons: string[] = [];
     const d = parseDateValue(t.contractDate);
-    if (t.cancelled) reasons.push("해제(취소) 거래");
+    const uncertain = uncertainKeys.has(t.key);
+    if (t.cancelled && !uncertain) reasons.push("해제(취소) 거래");
     if (!d) reasons.push("계약일 형식 오류");
     else {
       if (isBefore(asOf, d) === true) reasons.push("분석 기준일 이후 계약");
@@ -393,7 +408,11 @@ function analyzeMarket(w: WorkingInputs, asOf: DateParts, area: number | null, c
     }
     if (!(t.exclusiveAreaM2 > 0) || !(t.priceKrw > 0)) reasons.push("면적·금액 미입력");
     else if (band && (t.exclusiveAreaM2 < band.minM2 || t.exclusiveAreaM2 > band.maxM2)) reasons.push("유사면적 범위 외");
-    if (t.manualExclusion) reasons.push(`사용자 제외: ${t.manualExclusion}`);
+    baseReasonsByKey.set(t.key, [...reasons]);
+    if (t.manualExclusion && !uncertain) reasons.push(`사용자 제외: ${t.manualExclusion}`);
+    if (uncertain) reasons.push("동조건 묶음의 해제 대상 특정 불가(사용자 제외와 겹침) — 유효 표본은 범위로 표시");
+    if (shadowKeys.has(t.key)) reasons.push("같은 ID 중복 사본(1건만 집계)");
+    if (conflictKeys.has(t.key)) reasons.push("거래 ID 충돌 — 확인 필요(통계 제외)");
     reasons.forEach((r) => { const k = r.startsWith("사용자 제외") ? "사용자 제외" : r; excludedTrades[k] = (excludedTrades[k] ?? 0) + 1; });
     return { key: t.key, complexKey: complexKeyOf(t), included: false, reasons, perM2: t.exclusiveAreaM2 > 0 && t.priceKrw > 0 ? t.priceKrw / t.exclusiveAreaM2 : null };
   });
@@ -469,6 +488,22 @@ function analyzeMarket(w: WorkingInputs, asOf: DateParts, area: number | null, c
     if (r.reasons.length === 0 && !r.included) { const st = statusByKey.get(r.complexKey); r.reasons.push(st === "needsCheck" ? "거리 미확인 후보 단지(통계 제외)" : st === "excluded" ? "제외된 단지" : "대표 5개 밖 단지"); }
   });
   const pooled = computeStats(txRows.filter((r) => r.included).map((r) => ({ perM2: r.perM2!, complex: r.complexKey })));
+  // 유효 표본 범위(해제 대상 특정 불가 묶음)
+  let rMin = 0, rMax = 0, uGroups = 0;
+  for (const members of ambGroups.values()) {
+    if (!members.some((m) => uncertainKeys.has(m.key))) continue;
+    if (!members.every((m) => (baseReasonsByKey.get(m.key) ?? ["x"]).length === 0 && selectedKeys.has(complexKeyOf(m)))) continue;
+    const S = members[0].cancelAmbiguity!.size, k = members[0].cancelAmbiguity!.cancelled, U = members.filter((m) => m.manualExclusion).length;
+    rMin += Math.max(0, S - k - U);
+    rMax += S - Math.max(k, U);
+    uGroups++;
+  }
+  const sampleRange = { certain: pooled.count, min: pooled.count + rMin, max: pooled.count + rMax, uncertainGroups: uGroups };
+  if (uGroups) flags.push({ level: "high", area: "price", text: `유효 표본 ${sampleRange.min}~${sampleRange.max}건 — 동조건 묶음 ${uGroups}개에서 해제 대상과 사용자 제외가 겹쳐 확정 불가(중위 단가 등은 확정 표본 ${pooled.count}건 기준)` });
+  if (shadowKeys.size) flags.push({ level: "medium", area: "data", text: `저장된 같은 ID·같은 내용 사본 ${shadowKeys.size}건 — 통계는 1건으로 계산, ‘거래 진단’에서 정리 가능` });
+  if (conflictKeys.size) flags.push({ level: "high", area: "data", text: `거래 ID 충돌 ${conflictKeys.size}건(같은 출처·ID에 다른 내용·지역·단지) — 통계 제외, 원본 확인 필요` });
+  const held = w.transactions.filter((t) => t.reviewFlag?.kind === "idChangeUnconfirmed").length;
+  if (held) flags.push({ level: "medium", area: "data", text: `출처 미지정 거래 ID의 값 변경 ${held}건 — 자동 반영 보류(기존 값으로 집계), 확인 필요` });
 
   if (w.transactions.length && !comparables.length) flags.push({ level: "high", area: "price", text: "비교 가능한 단지 없음(거래 표본·면적·거리·준공연도 기준 미충족)" });
   else if (comparables.length && comparables.length < 3) flags.push({ level: "medium", area: "price", text: `비교 가능한 단지 ${comparables.length}개뿐 — 비교 범위 제한` });
@@ -490,7 +525,7 @@ function analyzeMarket(w: WorkingInputs, asOf: DateParts, area: number | null, c
   if (v03.length) flags.push({ level: "medium", area: "price", text: `v0.3에서 금액 차이만으로 자동 정정된 거래 ${v03.length}건 — 원래 거래가 별도 거래였을 수 있음(이력 보존), 확인 필요` });
 
   return {
-    recentWindow: { start: start.raw, end: asOfMonth.raw, months: o.recentMonths }, areaFilter: band, complexes, comparables, needsCheck, pooled, excludedTrades, validTrades, txRows,
+    recentWindow: { start: start.raw, end: asOfMonth.raw, months: o.recentMonths }, areaFilter: band, complexes, comparables, needsCheck, pooled, sampleRange, excludedTrades, validTrades, txRows,
     dataModes: [...new Set(w.transactions.map((t) => t.dataMode))], sources: [...new Set(w.transactions.map((t) => t.source ?? DATA_MODE_LABEL[t.dataMode]))].slice(0, 5),
   };
 }

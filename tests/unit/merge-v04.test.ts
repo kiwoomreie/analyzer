@@ -55,8 +55,8 @@ test("전체 자료 후 일부 자료: 일부 자료에 없는 거래는 지우�
 });
 
 test("실제 정정 사례(원천 식별자 있음)는 정정으로 처리, 식별자 없으면 정정 건수를 주장하지 않음", () => {
-  const a = merge([], [tx({ officialId: "R1" })]);
-  const b = merge(a.transactions, [tx({ officialId: "R1", ...p95 })]);
+  const a = merge([], [tx({ officialId: "R1", idScope: "원천A" })]);
+  const b = merge(a.transactions, [tx({ officialId: "R1", idScope: "원천A", ...p95 })]); // v0.5: 출처가 지정된 ID만 원천 정정
   assert.equal(b.report.corrected, 1);
   assert.deepEqual(prices(b.transactions), [9.5]);
   const c = merge([], [tx()]);

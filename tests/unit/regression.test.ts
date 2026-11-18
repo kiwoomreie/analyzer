@@ -72,9 +72,9 @@ test("[1→v0.4] 금액만 다른 거래는 자동 정정하지 않음(둘 다 �
 
 test("[1] 원천 거래 식별자가 있으면 우선 사용(값이 바뀌면 정정), 사용자 제외 사유는 보존", () => {
   const w = located();
-  applyTrades(w, [tx({ officialId: "R-1", floor: 3 })], AT, "csv");
+  applyTrades(w, [tx({ officialId: "R-1", idScope: "원천A", floor: 3 })], AT, "csv");
   w.transactions[0].manualExclusion = "특수 거래";
-  const r = applyTrades(w, [tx({ officialId: "R-1", floor: 3, priceKrw: 950_000_000 }), tx({ officialId: "R-2", floor: 3 })], AT, "csv");
+  const r = applyTrades(w, [tx({ officialId: "R-1", idScope: "원천A", floor: 3, priceKrw: 950_000_000 }), tx({ officialId: "R-2", idScope: "원천A", floor: 3 })], AT, "csv");
   assert.equal(r.corrected, 1);
   assert.equal(r.added, 1);
   assert.equal(w.transactions[0].manualExclusion, "특수 거래");

@@ -88,9 +88,10 @@ const HEADER_MAP: Record<string, keyof RawTx> = {
   단지코드: "complexId", 단지일련번호: "complexId", aptseq: "complexId",
   동: "aptDong", aptdong: "aptDong",
   거래id: "officialId", 거래번호: "officialId", tradeid: "officialId",
+  id출처: "idScope", 거래id출처: "idScope", idscope: "idScope",
   건축년도: "buildYear", 준공연도: "buildYear", buildyear: "buildYear",
 };
-interface RawTx { complexName?: string; area?: string; floor?: string; priceMan?: string; priceKrw?: string; contractDate?: string; ym?: string; day?: string; cancelled?: string; cancelDate?: string; dong?: string; jibun?: string; sggCd?: string; complexId?: string; aptDong?: string; officialId?: string; buildYear?: string }
+interface RawTx { complexName?: string; area?: string; floor?: string; priceMan?: string; priceKrw?: string; contractDate?: string; ym?: string; day?: string; cancelled?: string; cancelDate?: string; dong?: string; jibun?: string; sggCd?: string; complexId?: string; aptDong?: string; officialId?: string; idScope?: string; buildYear?: string }
 
 export interface ImportOutcome<T> { ok: boolean; items: T[]; errors: string[]; skipped: number }
 
@@ -132,7 +133,7 @@ export function transactionsFromCsv(text: string, dataMode: DataMode = "user", s
       cancelDate: raw.cancelDate || undefined, dong: raw.dong ? raw.dong.slice(0, 40) : undefined,
       jibun: raw.jibun ? raw.jibun.slice(0, 40) : undefined, sggCd: raw.sggCd && /^\d{5}$/.test(raw.sggCd) ? raw.sggCd : undefined,
       complexId: raw.complexId ? raw.complexId.slice(0, 40) : undefined, aptDong: raw.aptDong ? raw.aptDong.slice(0, 20) : undefined,
-      officialId: raw.officialId ? raw.officialId.slice(0, 80) : undefined,
+      officialId: raw.officialId ? raw.officialId.slice(0, 80) : undefined, idScope: raw.idScope ? raw.idScope.slice(0, 60) : undefined,
       buildYear: Number.isFinite(toNum(raw.buildYear)) ? toNum(raw.buildYear) : undefined, dataMode, source: source.slice(0, 120),
     });
   });
@@ -167,7 +168,7 @@ export function generalJsonImport(data: unknown): { ok: boolean; result?: Genera
   const transactions: Transaction[] = arr(d.transactions).flatMap((t: any) => {
     if (!t || typeof t.complexName !== "string" || !(t.exclusiveAreaM2 > 0) || !(t.priceKrw > 0) || !parseDateValue(t.contractDate)) { errs.push("거래 1건 형식 오류 — 건너뜀"); return []; }
     const str = (v: unknown, n: number) => (typeof v === "string" && v ? v.slice(0, n) : undefined);
-    return [{ key: newKey("tx"), complexName: t.complexName, dong: str(t.dong, 40), jibun: str(t.jibun, 40), sggCd: str(t.sggCd, 5), complexId: str(t.complexId, 40), aptDong: str(t.aptDong, 20), officialId: str(t.officialId, 80), exclusiveAreaM2: t.exclusiveAreaM2, floor: t.floor, priceKrw: Math.round(t.priceKrw), contractDate: t.contractDate, cancelled: !!t.cancelled, cancelDate: t.cancelDate, buildYear: t.buildYear, dataMode: mode, source: String(d.source ?? "사용자 JSON").slice(0, 120) } as Transaction];
+    return [{ key: newKey("tx"), complexName: t.complexName, dong: str(t.dong, 40), jibun: str(t.jibun, 40), sggCd: str(t.sggCd, 5), complexId: str(t.complexId, 40), aptDong: str(t.aptDong, 20), officialId: str(t.officialId, 80), idScope: str(t.idScope, 60), exclusiveAreaM2: t.exclusiveAreaM2, floor: t.floor, priceKrw: Math.round(t.priceKrw), contractDate: t.contractDate, cancelled: !!t.cancelled, cancelDate: t.cancelDate, buildYear: t.buildYear, dataMode: mode, source: String(d.source ?? "사용자 JSON").slice(0, 120) } as Transaction];
   });
   return { ok: true, result: { events, evidence, transactions }, errors: errs.slice(0, 10) };
 }
