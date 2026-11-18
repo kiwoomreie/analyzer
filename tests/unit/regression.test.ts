@@ -6,13 +6,19 @@ import { runAnalysis, evidenceLevel } from "../../shared/analysis.ts";
 import { applyLookup, applyTrades } from "../../shared/applyData.ts";
 import { mergeTrades } from "../../shared/tradeMerge.ts";
 import { transactionsFromCsv } from "../../shared/importers.ts";
-import { complexKeyOf, emptyWorking, migrateRecord, newManualRecord, type Evidence, type Transaction, type WorkingInputs } from "../../shared/model.ts";
+import { complexKeyOf, emptyWorking, migrateRecord, newManualRecord, type CollectionReport, type Evidence, type Transaction, type WorkingInputs } from "../../shared/model.ts";
 import { demoWorking } from "../../shared/demo.ts";
 import { reportSummary } from "../../shared/report.ts";
 import { withRun, latestRun } from "../../web/nav.ts";
 
 const CSV = readFileSync("examples/sample-data/demo-nearby-trades.csv", "utf8");
 const AT = "2026-11-18T09:00:00+09:00";
+const report = (o: Partial<CollectionReport> = {}): CollectionReport => ({
+  at: AT, status: "complete", trades: { status: "complete", monthsOk: 1, monthsTotal: 1, capped: false, note: "" },
+  regionDiscovery: { status: "sampled", sampled: 17, failedPoints: 0, regionsFound: 1, regionsUsed: 1, capped: false, note: "" },
+  complexGeocode: { status: "complete", total: 1, attempted: 1, located: 1, failed: 0, capped: false },
+  regions: [], regionNote: "", months: [], notes: [], ...o,
+});
 let seq = 0;
 const tx = (o: Partial<Transaction>): Transaction => ({ key: `t${++seq}`, complexName: "A", exclusiveAreaM2: 84, floor: 5, priceKrw: 900_000_000, contractDate: "2026-09-10", cancelled: false, dataMode: "official-api", ...o });
 
@@ -55,20 +61,13 @@ test("[1] 해제(취소)는 원거래와 대사해 표시만 바꾸고 건수는
   assert.match(w.transactions.find((t) => t.cancelled)!.revisions![0].change, /해제/);
 });
 
-test("[1] 금액 정정: 1:1이면 정정 이력, 1:1이 아니면 합치지 않고 확인 필요로 집계", () => {
+test("[1→v0.4] 금액만 다른 거래는 자동 정정하지 않음(둘 다 보존, 확인 필요)", () => {
   const w = located();
   applyTrades(w, [tx({ priceKrw: 900_000_000 })], AT, "api");
   const r = applyTrades(w, [tx({ priceKrw: 910_000_000 })], AT, "api");
-  assert.equal(r.corrected, 1);
-  assert.equal(w.transactions.length, 1);
-  assert.equal(w.transactions[0].priceKrw, 910_000_000);
-  assert.match(w.transactions[0].revisions![0].change, /정정/);
-  const w2 = located();
-  applyTrades(w2, [tx({ priceKrw: 900_000_000 })], AT, "api");
-  const r2 = applyTrades(w2, [tx({ priceKrw: 910_000_000 }), tx({ priceKrw: 920_000_000 })], AT, "api");
-  assert.equal(r2.corrected, 0);
-  assert.equal(r2.ambiguous, 2);
-  assert.equal(w2.transactions.length, 3);
+  assert.equal(r.corrected, 0);
+  assert.equal(r.possibleCorrections, 1);
+  assert.equal(w.transactions.length, 2);
 });
 
 test("[1] 원천 거래 식별자가 있으면 우선 사용(값이 바뀌면 정정), 사용자 제외 사유는 보존", () => {
@@ -83,16 +82,16 @@ test("[1] 원천 거래 식별자가 있으면 우선 사용(값이 바뀌면 �
 
 test("[1] 공공 API 수집 결과가 부분 실패면 ‘누락 가능’ 불확실성 표시", () => {
   const w = located();
-  applyLookup(w, { geocode: null, trades: [tx({})], complexes: [], report: { at: AT, status: "partial", regions: [{ code: "11110", name: "시험" }], regionNote: "시험", months: [{ lawdCode: "11110", yearMonth: "202609", totalCount: 1200, collected: 1000, pagesExpected: 2, pagesFetched: 1, ok: false, error: "2쪽 호출 실패" }], complexGeocode: { attempted: 0, located: 0, failed: 0 }, notes: [] } }, AT);
+  applyLookup(w, { geocode: null, trades: [tx({})], complexes: [], report: report({ status: "partial", trades: { status: "partial", monthsOk: 0, monthsTotal: 1, capped: false, note: "" }, months: [{ lawdCode: "11110", yearMonth: "202609", totalCount: 1200, collected: 1000, pagesExpected: 2, pagesFetched: 1, ok: false, error: "2쪽 호출 실패" }] }) }, AT);
   const r = runAnalysis(w);
-  assert.ok(r.flags.some((f) => f.level === "high" && f.text.includes("완료되지 않음")));
+  assert.ok(r.flags.some((f) => f.level === "high" && f.text.includes("미완료")));
   assert.equal(r.collection?.status, "partial");
 });
 
 test("[1] 자동 조회는 본건 좌표·단지 정보를 덮어쓰지 않음", () => {
   const w = located();
   w.complexInfo.push({ complexKey: complexKeyOf({ complexName: "A" }), location: { lat: 37.51, lng: 127.01 }, locationSource: "사용자" });
-  applyLookup(w, { geocode: { lat: 1, lng: 1, source: "api" }, trades: [], complexes: [{ complexKey: complexKeyOf({ complexName: "A" }), location: { lat: 30, lng: 120 }, locationSource: "api", address: "x" }], report: { at: AT, status: "complete", regions: [], regionNote: "", months: [], complexGeocode: { attempted: 1, located: 1, failed: 0 }, notes: [] } }, AT);
+  applyLookup(w, { geocode: { lat: 1, lng: 1, source: "api" }, trades: [], complexes: [{ complexKey: complexKeyOf({ complexName: "A" }), location: { lat: 30, lng: 120 }, locationSource: "api", address: "x" }], report: report() }, AT);
   assert.equal(w.property.coordinates!.lat, 37.5);
   assert.equal(w.complexInfo[0].location!.lat, 37.51);
 });

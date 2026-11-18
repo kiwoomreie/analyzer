@@ -125,16 +125,19 @@ test("[모의 응답] 자동 조회 2회: 두 번째는 신규 0·중복 전량,
   const page = await ctx.newPage();
   await startWith(page, KEYED, "경기도 성남시 시험로 1");
   await open(page, "sec-market");
-  assert.match(await page.textContent("[data-testid=collection-report]") ?? "", /전체 수집·건수 대사 완료/);
+  const colText = await page.textContent("[data-testid=collection-report]") ?? "";
+  assert.match(colText, /거래 응답 수집·건수 대사: 완료/);
+  assert.match(colText, /주변 행정구역 탐색: 표본 지점 확인\(경계 전체 보장 아님\)/);
+  assert.match(colText, /단지 좌표 확인/);
   await page.click("[data-testid=public-lookup]");
   await page.waitForSelector("[data-testid=market-msg]");
   assert.match(await page.textContent("[data-testid=market-msg]") ?? "", /신규 0.*중복/);
   mockState.failYm = "202610";
   await page.click("[data-testid=public-lookup]");
-  await page.waitForFunction(() => /일부 수집/.test(document.querySelector("[data-testid=market-msg]")?.textContent ?? ""));
+  await page.waitForFunction(() => /일부만 수집/.test(document.querySelector("[data-testid=market-msg]")?.textContent ?? ""));
   mockState.failYm = "";
   await page.click("[data-testid=rerun]");
-  assert.match(await page.textContent("[data-testid=summary-uncertainty]") ?? "", /완료되지 않음/);
+  assert.match(await page.textContent("[data-testid=summary-uncertainty]") ?? "", /거래 응답 수집·건수 대사 미완료/);
   await ctx.close();
 });
 

@@ -5,7 +5,8 @@ import { lookupPublicData } from "../api.ts";
 import { latestRun } from "../nav.ts";
 import type { ComplexInfo } from "../../shared/model.ts";
 import { transactionsFromCsv } from "../../shared/importers.ts";
-import { applyLookup, applyTrades, collectionStatusText } from "../../shared/applyData.ts";
+import { applyLookup, applyTrades, collectionStatusText, GEOCODE_STATUS_LABEL, REGION_STATUS_LABEL, TRADE_STATUS_LABEL } from "../../shared/applyData.ts";
+import { migrateCollection } from "../../shared/model.ts";
 import { mergeReportText } from "../../shared/tradeMerge.ts";
 import { parseDateValue, seoulNowIso } from "../../shared/dates.ts";
 import { fmtMan, fmtNum } from "../../shared/units.ts";
@@ -69,7 +70,7 @@ export function MarketSection({ rec, update, session }: SectionProps) {
   if (ws) for (let i = 0; i < m.recentWindow.months; i++) { const t = ws.y * 12 + ws.m - 1 + i; monthly.set(`${Math.floor(t / 12)}-${String((t % 12) + 1).padStart(2, "0")}`, 0); }
   m.txRows.filter((x) => x.included).forEach((x) => { const t = snapTx.get(x.key); const k = t?.contractDate.slice(0, 7); if (k && monthly.has(k)) monthly.set(k, monthly.get(k)! + 1); });
   const configured = session?.config.publicData === "configured" || session?.config.geocoder === "configured";
-  const lastCol = (w.collections ?? [])[0];
+  const lastCol = (w.collections ?? [])[0] ? migrateCollection((w.collections ?? [])[0]) : undefined;
   const complexes = [...m.complexes].sort((a, b) => ORDER[a.status] - ORDER[b.status] || (a.distanceM ?? 1e9) - (b.distanceM ?? 1e9));
 
   return (
@@ -80,12 +81,19 @@ export function MarketSection({ rec, update, session }: SectionProps) {
         {!configured && <Badge tone="muted">공공데이터·지도 키 미설정 — 자동 조회 불가</Badge>}
       </div>
       {msg && <div className="banner info small" data-testid="market-msg">{msg}</div>}
-      <p className="muted small">같은 자료를 여러 번 가져와도 같은 거래는 한 번만 집계합니다(식별: 원천 거래 식별자 → 없으면 단지·면적·층·동·계약일·금액). 해제·정정은 원거래와 대사해 이력을 남깁니다. CSV 필수 열: 단지명, 전용면적, 거래금액(만원) 또는 거래금액(원), 계약일 또는 계약년월. 선택 열: 단지코드, 시군구코드, 법정동, 지번, 동, 층, 해제여부, 해제사유발생일, 건축년도, 거래ID.</p>
+      <p className="muted small">같은 자료를 여러 번·다른 순서로 가져와도 같은 거래는 한 번만 집계합니다(식별: 원천 거래 식별자 → 없으면 단지·면적·층·동·계약일·금액이 같은 ‘동조건 묶음’ 단위로 건수·해제 건수만 대사, 입력 순서는 쓰지 않음). 금액만 다른 같은 조건 거래는 자동 정정하지 않고 둘 다 보존해 ‘별도 거래/정정 확인 필요’로 표시합니다. CSV 필수 열: 단지명, 전용면적, 거래금액(만원) 또는 거래금액(원), 계약일 또는 계약년월. 선택 열: 단지코드, 시군구코드, 법정동, 지번, 동, 층, 해제여부, 해제사유발생일, 건축년도, 거래ID.</p>
 
       {lastCol && (
-        <details className="sub-details" data-testid="collection-report" open={lastCol.status !== "complete"}>
-          <summary className="small">최근 공공 API 수집: <b className={lastCol.status === "complete" ? "" : "warn-text"}>{collectionStatusText(lastCol)}</b></summary>
-          <p className="small">{lastCol.regionNote}</p>
+        <details className="sub-details" data-testid="collection-report" open={lastCol.trades.status !== "complete" || lastCol.regionDiscovery.status !== "sampled" || lastCol.complexGeocode.status !== "complete"}>
+          <summary className="small">최근 공공 API 수집({lastCol.at.slice(0, 16).replace("T", " ")}) — 상태 3가지를 따로 표시</summary>
+          <table className="tbl small" data-testid="collection-status">
+            <tbody>
+              <tr><th>거래 응답 수집·건수 대사</th><td className={lastCol.trades.status === "complete" ? "" : "warn-text"}>거래 응답 수집·건수 대사: {TRADE_STATUS_LABEL[lastCol.trades.status]}</td><td>월 {lastCol.trades.monthsOk}/{lastCol.trades.monthsTotal}{lastCol.trades.capped ? " · 페이지 상한 도달" : ""} · {lastCol.trades.note}</td><td className="muted">미완료면 일부 거래 누락 → 단지별 표본·중위 단가와 대표 비교단지 선정이 달라질 수 있음</td></tr>
+              <tr><th>주변 행정구역 탐색</th><td className={lastCol.regionDiscovery.status === "sampled" && !lastCol.regionDiscovery.capped ? "" : "warn-text"}>주변 행정구역 탐색: {REGION_STATUS_LABEL[lastCol.regionDiscovery.status]}</td><td>{lastCol.regionDiscovery.note}</td><td className="muted">빠진 시군구가 있으면 반경 안 단지가 누락돼 대표 비교단지가 가장 가까운 단지가 아닐 수 있음</td></tr>
+              <tr><th>단지 좌표 확인</th><td className={lastCol.complexGeocode.status === "complete" ? "" : "warn-text"}>단지 좌표 확인: {GEOCODE_STATUS_LABEL[lastCol.complexGeocode.status]}</td><td>{lastCol.complexGeocode.located}/{lastCol.complexGeocode.total}곳{lastCol.complexGeocode.capped ? " · 상한 도달" : ""}</td><td className="muted">좌표 미확인 단지는 확인 필요 후보로 분리되어 대표 비교단지 선정에서 빠짐</td></tr>
+            </tbody>
+          </table>
+          <p className="small muted">{collectionStatusText(lastCol)}</p>
           <table className="tbl small"><thead><tr><th>시군구</th><th>계약월</th><th>전체 건수</th><th>수집</th><th>페이지</th><th>대사</th></tr></thead>
             <tbody>{lastCol.months.map((x, i) => <tr key={i}><td>{x.lawdCode}</td><td>{x.yearMonth}</td><td>{x.totalCount ?? "확인 불가"}</td><td>{x.collected}</td><td>{x.pagesFetched}/{x.pagesExpected ?? "?"}</td><td>{x.ok ? "일치" : <span className="warn-text">{x.error ?? "미완료"}</span>}</td></tr>)}</tbody></table>
           {lastCol.notes.length > 0 && <ul className="small">{lastCol.notes.map((n, i) => <li key={i}>{n}</li>)}</ul>}
@@ -152,7 +160,7 @@ export function MarketSection({ rec, update, session }: SectionProps) {
                 <tr key={t.key} className={row && !row.included ? "excluded" : ""}>
                   <td>{t.complexName}{t.dong ? <div className="muted">{t.dong} {t.jibun ?? ""}</div> : null}</td><td>{fmtNum(t.exclusiveAreaM2)}</td><td>{t.floor ?? "-"}</td><td>{(t.priceKrw / 1e4).toLocaleString("ko-KR")}</td>
                   <td>{fmtNum(t.priceKrw / t.exclusiveAreaM2 / 1e4, 1)}</td><td>{t.contractDate}</td>
-                  <td>{t.cancelled ? "해제" : ""}{t.revisions?.length ? <div className="muted">{t.revisions.map((v) => v.change).join(" / ")}</div> : null}</td>
+                  <td>{t.cancelled ? "해제" : ""}{t.reviewFlag && <div><Badge tone="warn">별도 거래/정정 확인 필요</Badge></div>}{(t.sameKeyCount ?? 1) > 1 && <div className="muted">같은 조건 {t.sameKeyCount}건(구별 불가)</div>}{t.revisions?.length ? <div className="muted">{t.revisions.map((v) => v.change).join(" / ")}</div> : null}</td>
                   <td>{row ? (row.included ? "포함" : row.reasons.join(", ")) : <span className="warn-text">결과 이후 추가 — 재분석 필요</span>}</td>
                   <td><Text label="" value={t.manualExclusion} onChange={(v) => update((x) => { if (i >= 0) x.transactions[i].manualExclusion = v; })} /></td>
                   <td><ModeBadge mode={t.dataMode} /> <span className="muted">{t.source}</span></td>

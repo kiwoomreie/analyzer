@@ -108,6 +108,9 @@ test("[모의 응답] 주소→좌표 → 반경 주변 시군구 2곳(경계 �
   assert.equal(j.report.months.length, 4); // 2개 시군구 × 2개월
   assert.ok(j.report.months.every((m: any) => m.ok && m.totalCount === m.collected));
   assert.equal(j.report.status, "complete");
+  assert.equal(j.report.trades.status, "complete");
+  assert.equal(j.report.regionDiscovery.status, "sampled");
+  assert.equal(j.report.complexGeocode.status, "complete");
   assert.ok(j.trades.some((t: any) => t.complexName === "경계밖단지"));
   assert.equal(j.trades[0].dataMode, "official-api");
   assert.equal(j.trades.find((t: any) => t.complexName === "시험단지").complexId, "41135-1번지");
@@ -122,7 +125,8 @@ test("[모의 응답] 한 달 수집 실패·지점 조회 실패 → partial, �
   mockState.failPoints = 0;
   assert.equal(j.report.status, "partial");
   assert.ok(j.report.months.some((m: any) => !m.ok));
-  assert.match(j.report.regionNote, /누락 가능/);
+  assert.equal(j.report.regionDiscovery.status, "partial");
+  assert.equal(j.report.trades.status, "partial");
   assert.ok(j.report.notes.some((n: string) => n.includes("누락 가능성")));
 });
 

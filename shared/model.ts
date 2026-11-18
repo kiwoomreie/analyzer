@@ -173,6 +173,10 @@ export interface Transaction {
   idBasis?: "official" | "composite";
   /** 정정·취소 대사 이력 */
   revisions?: { at: string; source: string; change: string }[];
+  /** 같은 조건 묶음의 크기(2 이상이면 기록된 정보로 서로 구별 불가) */
+  sameKeyCount?: number;
+  /** 확인 필요 표시(예: 금액만 다른 같은 조건 거래 — 별도 거래인지 정정인지 미확정) */
+  reviewFlag?: { kind: "possibleCorrection"; base: string; note: string };
   exclusiveAreaM2: number;
   floor?: number;
   priceKrw: number;
@@ -258,24 +262,48 @@ export interface WorkingInputs {
 
 export interface CollectionReport {
   at: string;
-  /** complete=모든 대상 월·시군구·페이지 수집 및 건수 대사 일치 */
+  /** 이전 버전 호환: 거래 응답 수집 상태와 같음 */
   status: "complete" | "partial" | "failed" | "unset";
+  /** ① 거래 응답 수집·건수 대사(시군구·월별 전체 건수와 수집 건수 일치 여부) */
+  trades: { status: "complete" | "partial" | "failed" | "unset"; monthsOk: number; monthsTotal: number; capped: boolean; note: string };
+  /** ② 주변 행정구역 탐색(표본 지점 방식 — 경계 전체를 보장하지 않으므로 ‘완료’ 상태가 없음) */
+  regionDiscovery: { status: "sampled" | "partial" | "notPerformed"; sampled: number; failedPoints: number; regionsFound: number; regionsUsed: number; capped: boolean; note: string };
+  /** ③ 단지 좌표 확인 */
+  complexGeocode: { status: "complete" | "partial" | "failed" | "notPerformed"; total: number; attempted: number; located: number; failed: number; capped: boolean };
   regions: { code: string; name: string }[];
   regionNote: string;
   months: { lawdCode: string; yearMonth: string; totalCount: number | null; collected: number; pagesExpected: number | null; pagesFetched: number; ok: boolean; error?: string }[];
-  complexGeocode: { attempted: number; located: number; failed: number };
   merge?: MergeReport;
   notes: string[];
+}
+
+/** 이전 버전 수집 보고 변환 */
+export function migrateCollection(c: any): CollectionReport {
+  if (c.trades && c.regionDiscovery) return c;
+  const months = c.months ?? [];
+  const ok = months.filter((m: any) => m.ok).length;
+  return {
+    ...c,
+    trades: { status: c.status ?? "failed", monthsOk: ok, monthsTotal: months.length, capped: false, note: "이전 버전 기록" },
+    regionDiscovery: { status: /누락 가능|확인 불가/.test(c.regionNote ?? "") ? "partial" : "sampled", sampled: 0, failedPoints: 0, regionsFound: (c.regions ?? []).length, regionsUsed: (c.regions ?? []).length, capped: false, note: c.regionNote ?? "" },
+    complexGeocode: { status: c.complexGeocode?.attempted ? (c.complexGeocode.failed ? "partial" : "complete") : "notPerformed", total: c.complexGeocode?.attempted ?? 0, attempted: c.complexGeocode?.attempted ?? 0, located: c.complexGeocode?.located ?? 0, failed: c.complexGeocode?.failed ?? 0, capped: false },
+  };
 }
 
 export interface MergeReport {
   received: number;
   added: number;
   duplicates: number;
+  /** 원천 거래 식별자가 같은데 값이 바뀐 정정만 집계(가격 차이만으로는 정정으로 보지 않음) */
   corrected: number;
   cancellationsApplied: number;
   addedCancelled: number;
-  ambiguous: number;
+  /** 같은 조건 묶음에서 반영한 해제 중 어느 거래인지 특정할 수 없는 건수 */
+  cancelUnspecified: number;
+  /** 금액만 다른 같은 조건 거래 — 별도 거래 또는 정정 여부 확인 필요 */
+  possibleCorrections: number;
+  /** 기존보다 적게 들어온 같은 조건 묶음(부분 자료 가능) */
+  partialGroups: number;
   sameKeyGroups: number;
   notes: string[];
 }
@@ -371,7 +399,7 @@ export function migrateWorking(w: WorkingInputs): WorkingInputs {
       c.complexKey = `N:${name}||${dong}|`;
     }
   }
-  w.collections ??= [];
+  w.collections = (w.collections ?? []).map(migrateCollection);
   w.dataLog ??= [];
   return w;
 }

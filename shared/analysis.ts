@@ -8,6 +8,14 @@ import {
 } from "./model.ts";
 import { deriveUnitPrices, fmtMan, fmtPct, m2ToPyeong, safeDivide, toKrw } from "./units.ts";
 import { LABELS } from "./contract.ts";
+import { migrateCollection, type CollectionReport } from "./model.ts";
+
+function collectionText(r: CollectionReport): string {
+  const t = { complete: "완료", partial: "일부(누락 가능)", failed: "실패", unset: "미설정" }[r.trades.status];
+  const d = { sampled: "표본 확인(경계 보장 아님)", partial: "일부 실패·상한", notPerformed: "미수행" }[r.regionDiscovery.status];
+  const g = { complete: "확인", partial: "일부 미확인", failed: "실패", notPerformed: "미수행" }[r.complexGeocode.status];
+  return `거래 수집·대사 ${t} · 행정구역 탐색 ${d} · 단지 좌표 ${g}(${r.complexGeocode.located}/${r.complexGeocode.total})`;
+}
 
 export type Level = "high" | "medium" | "low";
 export interface Flag { level: Level; area: "location" | "price" | "supply" | "data"; text: string }
@@ -240,9 +248,14 @@ export function runAnalysis(w: WorkingInputs): AnalysisResult {
   }
 
   const supply = analyzeSupply(w, activeEvents, events, asOf, area, flags);
-  const lastCol = (w.collections ?? [])[0];
-  if (lastCol && lastCol.status !== "complete" && lastCol.status !== "unset") flags.push({ level: "high", area: "data", text: `최근 공공 실거래 수집이 완료되지 않음(${lastCol.status === "partial" ? "일부 수집" : "실패"}) — 거래 누락 가능` });
-  if (lastCol && lastCol.regionNote.includes("누락 가능")) flags.push({ level: "medium", area: "data", text: `수집 범위: ${lastCol.regionNote}` });
+  const lastCol = (w.collections ?? [])[0] ? migrateCollection((w.collections ?? [])[0]) : undefined;
+  if (lastCol) {
+    const tr = lastCol.trades, rd = lastCol.regionDiscovery, gc = lastCol.complexGeocode;
+    if (tr.status === "partial" || tr.status === "failed") flags.push({ level: "high", area: "data", text: `최근 거래 응답 수집·건수 대사 미완료(월 ${tr.monthsOk}/${tr.monthsTotal}${tr.capped ? ", 페이지 상한" : ""}) — 일부 거래 누락 가능: 단지별 표본·중위 단가와 대표 비교단지 선정이 달라질 수 있음` });
+    if (rd.status !== "sampled" || rd.capped) flags.push({ level: "high", area: "data", text: `주변 행정구역 탐색 ${rd.status === "notPerformed" ? "미수행" : "일부 실패·상한"} — 반경 안 다른 시군구 단지가 빠졌을 수 있어 대표 비교단지가 실제로 가장 가까운 단지가 아닐 수 있음` });
+    else flags.push({ level: "low", area: "data", text: "주변 행정구역은 17개 표본 지점으로 확인 — 행정구역 경계 전체를 보장하지 않음" });
+    if (gc.status === "partial" || gc.status === "failed" || gc.capped) flags.push({ level: "medium", area: "data", text: `단지 좌표 확인 ${gc.located}/${gc.total}${gc.capped ? "(상한 도달)" : ""} — 좌표를 확인하지 못한 단지는 확인 필요 후보로 분리되어 대표 비교단지 선정에서 빠짐` });
+  }
   if (w.events.length && w.events.every((e) => e.dataMode !== "official-api")) flags.push({ level: "low", area: "location", text: "입지 사건은 모두 사용자 입력임(입지 뉴스·고시 자동 수집 기능 없음)" });
   if (w.transactions.some((t) => t.dataMode === "demo") || w.events.some((e) => e.dataMode === "demo")) flags.push({ level: "high", area: "data", text: "가상 자료가 포함됨 — 실제 판단에 사용 불가" });
 
@@ -274,7 +287,7 @@ export function runAnalysis(w: WorkingInputs): AnalysisResult {
       coordinatesText: coords ? `${coords.lat.toFixed(6)}, ${coords.lng.toFixed(6)} (${coords.source})` : "좌표 미입력",
     },
     events, market, price, observed, supply, excludedEvents,
-    collection: lastCol ? { status: lastCol.status, text: `${lastCol.at.slice(0, 16).replace("T", " ")} 수집: ${lastCol.status === "complete" ? "전체 수집·대사 완료" : lastCol.status === "partial" ? "일부 수집(누락 가능)" : lastCol.status === "unset" ? "미설정" : "실패"}` } : null,
+    collection: lastCol ? { status: lastCol.trades.status, text: `${lastCol.at.slice(0, 16).replace("T", " ")} 수집 — ${collectionText(lastCol)}` } : null,
     causalEffect: { status: "notEstimated", text: "미추정 — 검증된 통계 모델을 적용하지 않아 입지 변화의 인과적 가격효과를 추정하지 않음" },
     flags,
     summary: {
@@ -469,6 +482,12 @@ function analyzeMarket(w: WorkingInputs, asOf: DateParts, area: number | null, c
   if (bigYear.length) flags.push({ level: "medium", area: "price", text: `비교단지와 연식 차이 5년 이상: ${bigYear.map((c) => c.name).join(", ")} — 신축·구축 차이 해석 필요` });
   if (pooled.count > 0 && pooled.count < o.minSample) flags.push({ level: "high", area: "price", text: `비교 거래 표본 ${pooled.count}건(기준 ${o.minSample}건 미만)` });
   if (!area && w.transactions.length) flags.push({ level: "medium", area: "price", text: "전용면적 미입력 — 모든 면적 거래를 ㎡당으로 비교(면적대 차이 미반영)" });
+  const txMap = new Map(w.transactions.map((t) => [t.key, t]));
+  const pc = w.transactions.filter((t) => t.reviewFlag?.kind === "possibleCorrection" && !t.cancelled && !t.manualExclusion);
+  const pcInPool = txRows.filter((r) => r.included && txMap.get(r.key)?.reviewFlag?.kind === "possibleCorrection").length;
+  if (pc.length) flags.push({ level: pcInPool ? "high" : "medium", area: "price", text: `금액만 다른 같은 조건 거래 ${pc.length}건 — 별도 거래 또는 정정 여부 확인 필요(원천 정정 정보 없음, 둘 다 집계 중${pcInPool ? `; 대표 비교 표본에 ${pcInPool}건 포함 — 표본 수·중위 단가 확정 아님` : ""})` });
+  const v03 = w.transactions.filter((t) => t.idBasis !== "official" && !t.officialId && (t.revisions ?? []).some((r) => r.change.startsWith("정정: 거래금액")));
+  if (v03.length) flags.push({ level: "medium", area: "price", text: `v0.3에서 금액 차이만으로 자동 정정된 거래 ${v03.length}건 — 원래 거래가 별도 거래였을 수 있음(이력 보존), 확인 필요` });
 
   return {
     recentWindow: { start: start.raw, end: asOfMonth.raw, months: o.recentMonths }, areaFilter: band, complexes, comparables, needsCheck, pooled, excludedTrades, validTrades, txRows,

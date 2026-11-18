@@ -1,6 +1,6 @@
 // 모의 공공 API 응답(국토부 실거래·카카오 로컬 형식을 흉내). 실제 API 검증을 대신하지 않는다.
 /** 모의 공공 API. 실제 국토부·카카오 응답 형식을 흉내 낸 것으로, 실제 API 검증을 대신하지 않는다. */
-export const mockState = { failYm: "" as string, failPoints: 0 };
+export const mockState = { failYm: "" as string, failPoints: 0, failGeocode: false };
 export const item = (name: string, umd: string, jibun: string, day: number, sgg: string) => `<item><aptNm>${name}</aptNm><aptSeq>${sgg}-${jibun}</aptSeq><sggCd>${sgg}</sggCd><umdNm>${umd}</umdNm><jibun>${jibun}</jibun><excluUseAr>84.97</excluUseAr><dealAmount> 95,000</dealAmount><dealYear>2026</dealYear><dealMonth>9</dealMonth><dealDay>${day}</dealDay><floor>7</floor><buildYear>2019</buildYear><cdealType></cdealType></item>`;
 export async function mockTransport(u: URL) {
   const json = (o: unknown) => ({ status: 200, headers: {}, body: Buffer.from(JSON.stringify(o)) });
@@ -11,7 +11,7 @@ export async function mockTransport(u: URL) {
   }
   if (u.hostname === "dapi.kakao.com") {
     const q = u.searchParams.get("query") ?? "";
-    if (q.includes("없는지번")) return json({ documents: [] });
+    if (q.includes("없는지번") || (mockState.failGeocode && q.includes("번지"))) return json({ documents: [] });
     return json({ documents: [{ x: "127.126", y: q.includes("2번지") ? "37.4125" : "37.412", address: { b_code: "4113510900" } }] });
   }
   const ym = u.searchParams.get("DEAL_YMD")!, lawd = u.searchParams.get("LAWD_CD")!;

@@ -41,6 +41,7 @@
 ## 4. 초안 기준 구현 내용(참고)
 
 - 경로·방식: `POST /launch`, `application/x-www-form-urlencoded`, hidden 필드 `payload` 1개(JSON 문자열), 본문 상한 64KiB.
+- 자동 조회(`PUBLIC_DATA_AUTO_FETCH=true`일 때): 일반 자동 조회와 같은 `server/collect.ts` → `applyLookup`(병합) → `withRun`(입력 스냅샷) 경로를 사용. 수집 상태 3가지를 기록하고 실패해도 수집 없이 분석을 진행하며 기록을 남김. 모의 요청·모의 공공 API로만 시험함.
 - 흐름: 검증 → 미소비 자료 10분 보관 → `303 /launch/claim/{id}.{1회용 코드}` → 수령(전송한 브라우저 결속 쿠키 + 원자적 1회 사용) → 새 앱 작업공간에 임시 분석 생성(24시간) → 기본 분석 1회 자동 실행 → `303 /app/a/{분석ID}`(주소에 코드·가정값 없음).
 - 거절: 금지 필드(인증·콜백·주소·저장위치·CF 등)나 비밀값 형태가 있으면 전체 거절, 원문은 저장·기록하지 않음.
 - 역방향 통신 없음: iframe·postMessage·콜백·상태조회·결과 반환 없음. 새 앱 응답에는 `Cross-Origin-Opener-Policy: same-origin`이 적용되고, 버튼 예제에는 `rel="noopener noreferrer"`가 들어 있습니다.

@@ -33,8 +33,15 @@ export function applyLookup(w: WorkingInputs, res: LookupPayload, at: string): C
   return report;
 }
 
+export const TRADE_STATUS_LABEL = { complete: "완료(건수 대사 일치)", partial: "일부만 수집 — 누락 가능", failed: "실패", unset: "미설정" } as const;
+export const REGION_STATUS_LABEL = { sampled: "표본 지점 확인(경계 전체 보장 아님)", partial: "일부 지점 실패·상한 — 누락 가능", notPerformed: "미수행 — 지정 시군구만" } as const;
+export const GEOCODE_STATUS_LABEL = { complete: "확인 대상 모두 좌표 확인", partial: "일부 미확인", failed: "확인 실패", notPerformed: "미수행" } as const;
+
+/** 세 가지 상태를 따로 표시(하나의 ‘완료’로 합치지 않음) */
 export function collectionStatusText(r: CollectionReport): string {
-  const okMonths = r.months.filter((m) => m.ok).length;
-  const label = r.status === "complete" ? "전체 수집·건수 대사 완료" : r.status === "partial" ? "일부 수집 — 누락 가능" : r.status === "unset" ? "미설정" : "수집 실패";
-  return `${label}(시군구 ${r.regions.length}곳, 월 ${okMonths}/${r.months.length} 대사 일치, 단지 좌표 ${r.complexGeocode.located}/${r.complexGeocode.attempted})`;
+  return [
+    `거래 응답 수집·건수 대사: ${TRADE_STATUS_LABEL[r.trades.status]}(월 ${r.trades.monthsOk}/${r.trades.monthsTotal}${r.trades.capped ? ", 상한 도달" : ""})`,
+    `주변 행정구역 탐색: ${REGION_STATUS_LABEL[r.regionDiscovery.status]}(시군구 ${r.regionDiscovery.regionsUsed}곳${r.regionDiscovery.failedPoints ? `, 실패 지점 ${r.regionDiscovery.failedPoints}` : ""}${r.regionDiscovery.capped ? ", 상한 도달" : ""})`,
+    `단지 좌표 확인: ${GEOCODE_STATUS_LABEL[r.complexGeocode.status]}(${r.complexGeocode.located}/${r.complexGeocode.total}${r.complexGeocode.capped ? ", 상한 도달" : ""})`,
+  ].join(" · ");
 }

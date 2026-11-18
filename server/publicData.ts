@@ -164,16 +164,6 @@ export async function fetchMolitMonth(cfg: MolitConfig, lawdCode: string, ym: st
   return out;
 }
 
-/** (이전 호환) 여러 달 수집 */
-export async function fetchMolitAptTrades(cfg: MolitConfig, lawdCode: string, yearMonths: string[], deps: SafeFetchDeps = {}) {
-  if (!cfg.serviceKey) return { status: "unset" as const, items: [] as Transaction[], errors: ["MOLIT_SERVICE_KEY 미설정"], months: [] as MonthCollection[] };
-  if (!/^\d{5}$/.test(lawdCode)) return { status: "error" as const, items: [] as Transaction[], errors: ["시군구 코드는 5자리"], months: [] as MonthCollection[] };
-  const months: MonthCollection[] = [];
-  for (const ym of yearMonths.filter((x) => /^\d{6}$/.test(x)).slice(0, cfg.maxMonths)) months.push(await fetchMolitMonth(cfg, lawdCode, ym, deps));
-  const errors = months.filter((m) => !m.ok).map((m) => `${m.lawdCode}/${m.yearMonth}: ${m.error ?? "미완료"}`);
-  return { status: errors.length ? ("partial" as const) : ("ok" as const), items: months.flatMap((m) => m.items), errors, months };
-}
-
 // ── 카카오 로컬 주소 검색(주소→좌표·법정동코드). 실제 호출 미검증.
 export interface GeocodeResult { lat: number; lng: number; lawdCode?: string; source: string }
 
