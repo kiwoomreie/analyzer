@@ -313,6 +313,10 @@ export interface MergeReport {
   possibleCorrections: number;
   /** 기존보다 적게 들어온 같은 조건 묶음(부분 자료 가능) */
   partialGroups: number;
+  /** 해제 대상 특정 불가 묶음 중 전량 해제 등으로 해소된 묶음 수(v0.5.2~) */
+  ambiguityResolved?: number;
+  /** 묶음 증가·해제 추가로 건수가 갱신된 불확실 묶음 수(v0.5.2~) */
+  ambiguityUpdated?: number;
   /** 같은 배치 안에서 같은 출처·ID·같은 내용으로 반복된 건수(1건만 보존) */
   idDuplicatesInBatch: number;
   /** 같은 출처·ID인데 내용·지역·단지가 충돌해 병합하지 않고 확인 필요로 보존한 건수 */

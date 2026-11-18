@@ -14,7 +14,7 @@ import type { ComplexInfo } from "../../shared/model.ts";
 import { transactionsFromCsv } from "../../shared/importers.ts";
 import { applyLookup, applyTrades, collectionStatusText, GEOCODE_STATUS_LABEL, REGION_STATUS_LABEL, TRADE_STATUS_LABEL } from "../../shared/applyData.ts";
 import { migrateCollection } from "../../shared/model.ts";
-import { cleanupIdenticalDuplicates, diagnoseTrades, mergeReportText } from "../../shared/tradeMerge.ts";
+import { cleanupIdenticalDuplicates, diagnoseTrades, liveCancelAmbiguity, mergeReportText } from "../../shared/tradeMerge.ts";
 import type { LookupPayload } from "../../shared/applyData.ts";
 import type { WorkingInputs } from "../../shared/model.ts";
 
@@ -54,6 +54,7 @@ export function MarketSection({ rec, getRec, update, setRec, session }: SectionP
   const pages = Math.max(1, Math.ceil(filtered.length / PAGE));
   const curPage = Math.min(page, pages - 1);
   const shown = filtered.slice(curPage * PAGE, curPage * PAGE + PAGE);
+  const ambLive = liveCancelAmbiguity(w.transactions);
 
   const setInfo = (ck: string, fn: (i: ComplexInfo) => void) => update((x) => {
     let i = x.complexInfo.find((c) => c.complexKey === ck);
@@ -238,7 +239,7 @@ export function MarketSection({ rec, getRec, update, setRec, session }: SectionP
                 <tr key={t.key} className={row && !row.included ? "excluded" : ""}>
                   <td>{t.complexName}{t.dong ? <div className="muted">{t.dong} {t.jibun ?? ""}</div> : null}</td><td>{fmtNum(t.exclusiveAreaM2)}</td><td>{t.floor ?? "-"}</td><td>{(t.priceKrw / 1e4).toLocaleString("ko-KR")}</td>
                   <td>{fmtNum(t.priceKrw / t.exclusiveAreaM2 / 1e4, 1)}</td><td>{t.contractDate}</td>
-                  <td>{t.cancelled ? "해제" : ""}{t.reviewFlag && <div title={t.reviewFlag.note}><Badge tone="warn">{t.reviewFlag.kind === "idConflict" ? "ID 충돌 확인 필요" : t.reviewFlag.kind === "idChangeUnconfirmed" ? "ID 값 변경 보류" : "별도 거래/정정 확인 필요"}</Badge></div>}{t.cancelAmbiguity && <div className="muted">같은 조건 {t.cancelAmbiguity.size}건 중 해제 {t.cancelAmbiguity.cancelled}건(대상 특정 불가)</div>}{t.officialId && <div className="muted">ID {t.officialId}·출처 {t.idScope ?? "미지정"}</div>}{(t.sameKeyCount ?? 1) > 1 && <div className="muted">같은 조건 {t.sameKeyCount}건(구별 불가)</div>}{t.revisions?.length ? <div className="muted">{t.revisions.map((v) => v.change).join(" / ")}</div> : null}</td>
+                  <td>{t.cancelled ? "해제" : ""}{t.reviewFlag && <div title={t.reviewFlag.note}><Badge tone="warn">{t.reviewFlag.kind === "idConflict" ? "ID 충돌 확인 필요" : t.reviewFlag.kind === "idChangeUnconfirmed" ? "ID 값 변경 보류" : "별도 거래/정정 확인 필요"}</Badge></div>}{t.idKey && ambLive.has(t.idKey) && <div className="muted" data-testid="amb-note">같은 조건 {ambLive.get(t.idKey)!.size}건 중 해제 {ambLive.get(t.idKey)!.cancelled}건(대상 특정 불가)</div>}{t.officialId && <div className="muted">ID {t.officialId}·출처 {t.idScope ?? "미지정"}</div>}{(t.sameKeyCount ?? 1) > 1 && <div className="muted">같은 조건 {t.sameKeyCount}건(구별 불가)</div>}{t.revisions?.length ? <div className="muted">{t.revisions.map((v) => v.change).join(" / ")}</div> : null}</td>
                   <td className="wide-cell">{row ? (row.included ? "포함" : row.reasons.join(", ")) : <span className="warn-text">결과 이후 추가 — 재분석 필요</span>}</td>
                   <td><Text label="" value={t.manualExclusion} onChange={(v) => update((x) => { if (i >= 0) x.transactions[i].manualExclusion = v; })} /></td>
                   <td><ModeBadge mode={t.dataMode} /> <span className="muted">{t.source}</span></td>

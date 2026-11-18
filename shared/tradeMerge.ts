@@ -183,6 +183,7 @@ export function mergeTrades(existing: Transaction[], incomingRaw: Transaction[],
   current.forEach((t, i) => { if (t.idBasis === "composite") exIdx.set(t.idKey!, [...(exIdx.get(t.idKey!) ?? []), i]); });
   const inGroups = groupOf(incoming);
   const incomingKeys = new Set(inGroups.keys());
+  const newlyAmbiguous = new Set<string>();
 
   for (const [k, items] of inGroups) {
     const idx = exIdx.get(k) ?? [];
@@ -211,8 +212,7 @@ export function mergeTrades(existing: Transaction[], incomingRaw: Transaction[],
       report.cancellationsApplied += cTarget - cNow;
       if (unspecified) {
         report.cancelUnspecified += cTarget - cNow;
-        // 묶음 전체에 ‘해제 대상 특정 불가’ 기록 — 사용자 제외가 섞이면 분석에서 유효 표본을 범위로 표시
-        groupRefs.forEach((r) => r.set({ ...r.get(), cancelAmbiguity: { size, cancelled: cTarget } }));
+        newlyAmbiguous.add(k); // 묶음 전체 ‘해제 대상 특정 불가’ 표시는 아래 재계산 단계에서 현재 건수 기준으로 기록
       }
     }
     report.duplicates += Math.max(0, matched);
@@ -221,6 +221,16 @@ export function mergeTrades(existing: Transaction[], incomingRaw: Transaction[],
     report.added += newOnes.length;
     report.addedCancelled += newOnes.filter((t) => t.cancelled).length;
     added.push(...newOnes);
+  }
+  // 매 병합 후 동조건 묶음의 해제 불확실성을 현재 거래 수·해제 수로 다시 계산(오래된 표시 정리, 늘어난 묶음의 새 거래 포함)
+  {
+    const all = [...current, ...added];
+    const rc = reconcileCancelAmbiguity(all, at, source, newlyAmbiguous);
+    rc.list.forEach((t, i) => { if (i < current.length) current[i] = t; else added[i - current.length] = t; });
+    report.ambiguityResolved = rc.resolved;
+    report.ambiguityUpdated = rc.updated;
+    if (rc.resolved) report.notes.push(`해제 대상 특정 불가 묶음 ${rc.resolved}개 해소 — 묶음 거래가 모두 해제되어 유효 표본 확정`);
+    if (rc.updated) report.notes.push(`해제 대상 특정 불가 묶음 ${rc.updated}개의 건수 갱신(묶음 증가 또는 해제 추가) — 새로 합류한 거래도 확정 표본으로 보지 않음`);
   }
   if (report.cancelUnspecified) report.notes.push(`같은 조건 묶음에서 해제 ${report.cancelUnspecified}건 반영 — 어느 거래가 해제됐는지 특정 불가(건수만 대사)`);
   if (report.partialGroups) report.notes.push(`같은 조건 묶음 ${report.partialGroups}개는 기존보다 적게 들어옴 — 부분 자료일 수 있어 기존 거래 유지`);
@@ -240,6 +250,65 @@ export function mergeTrades(existing: Transaction[], incomingRaw: Transaction[],
   });
   if (report.possibleCorrections) report.notes.push(`금액만 다른 같은 조건 거래 ${report.possibleCorrections}건 — 자동 정정하지 않고 보존, 별도 거래 또는 정정 여부 확인 필요`);
   return { transactions: [...current, ...added], report };
+}
+
+/**
+ * 현재 거래 구성 기준의 해제 불확실 묶음(저장된 {size,cancelled} 값은 쓰지 않음).
+ * 불확실 표시가 한 번이라도 있었던 묶음 중 해제 수가 0 < c < 묶음 크기인 것만 반환.
+ */
+export function liveCancelAmbiguity(list: Transaction[]): Map<string, { size: number; cancelled: number; members: Transaction[] }> {
+  const g = new Map<string, Transaction[]>();
+  list.forEach((t) => { if (t.idKey && (t.idBasis === "composite" || t.cancelAmbiguity)) g.set(t.idKey, [...(g.get(t.idKey) ?? []), t]); });
+  const out = new Map<string, { size: number; cancelled: number; members: Transaction[] }>();
+  for (const [k, members] of g) {
+    if (!members.some((m) => m.cancelAmbiguity)) continue;
+    const c = members.filter((m) => m.cancelled).length;
+    if (c > 0 && c < members.length) out.set(k, { size: members.length, cancelled: c, members });
+  }
+  return out;
+}
+
+/**
+ * 동조건(복합키) 묶음별로 해제 불확실성 표시를 현재 상태에 맞춘다.
+ * - 불확실 묶음: 이전에 불확실 표시가 있었거나 이번에 새로 생긴 묶음 중, 해제 수가 0보다 크고 묶음 크기보다 작은 것
+ * - 묶음 전원이 해제(또는 해제 0)면 표시 제거(해소 이력 남김). 거래·사용자 제외·이전 이력은 그대로 둔다.
+ * - 묶음이 커지면 새 거래를 포함해 모든 거래에 같은 {size, cancelled}를 기록한다.
+ */
+export function reconcileCancelAmbiguity(list: Transaction[], at: string, source: string, newlyAmbiguous: Set<string> = new Set()): { list: Transaction[]; resolved: number; updated: number } {
+  const out = list.slice();
+  const groups = new Map<string, number[]>();
+  out.forEach((t, i) => { if (t.idBasis === "composite" && t.idKey) groups.set(t.idKey, [...(groups.get(t.idKey) ?? []), i]); });
+  let resolved = 0, updated = 0;
+  for (const [k, idx] of groups) {
+    const members = idx.map((i) => out[i]);
+    const wasAmb = members.some((t) => t.cancelAmbiguity);
+    if (!wasAmb && !newlyAmbiguous.has(k)) continue;
+    const size = members.length, cancelled = members.filter((t) => t.cancelled).length;
+    const amb = cancelled > 0 && cancelled < size;
+    if (!amb) {
+      if (wasAmb) resolved++;
+      idx.forEach((i) => {
+        const t = out[i];
+        if (!t.cancelAmbiguity) return;
+        const { cancelAmbiguity: _old, ...rest } = t;
+        out[i] = { ...rest, revisions: [...(t.revisions ?? []), { at, source, change: `해제 대상 특정 불가 해소 — 같은 조건 ${size}건 중 해제 ${cancelled}건(${cancelled === size ? "모두 해제" : "해제 없음"})` }] };
+      });
+      continue;
+    }
+    let changed = false;
+    idx.forEach((i) => {
+      const t = out[i];
+      const cur = t.cancelAmbiguity;
+      if (cur && cur.size === size && cur.cancelled === cancelled) return;
+      changed = true;
+      const change = !cur
+        ? `해제 대상 특정 불가 묶음에 포함 — 같은 조건 ${size}건 중 해제 ${cancelled}건(이 거래의 해제 여부 확정 불가)`
+        : `해제 대상 특정 불가 묶음 갱신 — ${cur.size}건 중 해제 ${cur.cancelled}건 → ${size}건 중 해제 ${cancelled}건`;
+      out[i] = { ...t, cancelAmbiguity: { size, cancelled }, revisions: [...(t.revisions ?? []), { at, source, change }] };
+    });
+    if (changed && wasAmb) updated++;
+  }
+  return { list: out, resolved, updated };
 }
 
 export function mergeReportText(r: MergeReport): string {

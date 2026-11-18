@@ -9,7 +9,7 @@ import {
 import { deriveUnitPrices, fmtMan, fmtPct, m2ToPyeong, safeDivide, toKrw } from "./units.ts";
 import { LABELS } from "./contract.ts";
 import { migrateCollection, type CollectionReport } from "./model.ts";
-import { diagnoseTrades } from "./tradeMerge.ts";
+import { diagnoseTrades, liveCancelAmbiguity } from "./tradeMerge.ts";
 
 function collectionText(r: CollectionReport): string {
   const t = { complete: "완료", partial: "일부(누락 가능)", failed: "실패", unset: "미설정" }[r.trades.status];
@@ -390,8 +390,9 @@ function analyzeMarket(w: WorkingInputs, asOf: DateParts, area: number | null, c
   const shadowKeys = new Set(diag.identicalGroups.flatMap((g) => g.keys.slice(1)));
   const conflictKeys = new Set([...diag.conflictGroups.flatMap((g) => g.keys), ...w.transactions.filter((t) => t.reviewFlag?.kind === "idConflict").map((t) => t.key)]);
   // 동조건 묶음에서 해제 대상 특정 불가 + 사용자 제외가 섞인 묶음 → 유효 표본 확정 불가
-  const ambGroups = new Map<string, Transaction[]>();
-  w.transactions.forEach((t) => { if (t.cancelAmbiguity && t.idKey) ambGroups.set(t.idKey, [...(ambGroups.get(t.idKey) ?? []), t]); });
+  // 저장된 {size,cancelled} 값이 아니라 현재 묶음 구성(거래 수·해제 수)으로 판단 — 오래된 표시(전량 해제 후 잔존)나
+  // 표시가 빠진 새 합류 거래(v0.5.1 저장분)도 올바르게 처리. 입력 기록은 바꾸지 않는다.
+  const ambGroups = new Map<string, Transaction[]>([...liveCancelAmbiguity(w.transactions)].map(([k, v]) => [k, v.members]));
   const uncertainKeys = new Set<string>();
   for (const members of ambGroups.values()) if (new Set(members.map((m) => m.manualExclusion ?? "")).size > 1) members.forEach((m) => uncertainKeys.add(m.key));
   const baseReasonsByKey = new Map<string, string[]>();
@@ -493,7 +494,7 @@ function analyzeMarket(w: WorkingInputs, asOf: DateParts, area: number | null, c
   for (const members of ambGroups.values()) {
     if (!members.some((m) => uncertainKeys.has(m.key))) continue;
     if (!members.every((m) => (baseReasonsByKey.get(m.key) ?? ["x"]).length === 0 && selectedKeys.has(complexKeyOf(m)))) continue;
-    const S = members[0].cancelAmbiguity!.size, k = members[0].cancelAmbiguity!.cancelled, U = members.filter((m) => m.manualExclusion).length;
+    const S = members.length, k = members.filter((m) => m.cancelled).length, U = members.filter((m) => m.manualExclusion).length;
     rMin += Math.max(0, S - k - U);
     rMax += S - Math.max(k, U);
     uGroups++;
