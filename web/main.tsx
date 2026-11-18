@@ -1,7 +1,7 @@
 import { createRoot } from "react-dom/client";
 import { useEffect, useState } from "react";
 import { getSession, getSessionError, lookupPublicData, type SessionInfo } from "./api.ts";
-import { draftStore, localStore } from "./store.ts";
+import { draftStore, localStore, memoryDrafts } from "./store.ts";
 import { AnalysisView } from "./AnalysisView.tsx";
 import { navigate, withRun } from "./nav.ts";
 import { DateText, Num, Select, Text, download } from "./components.tsx";
@@ -10,6 +10,7 @@ import { APP_NAME, emptyWorking, newKey, newManualRecord, ORIGIN_LABEL, type Ana
 import { detectFile, makeBackup } from "../shared/importers.ts";
 import { demoWorking } from "../shared/demo.ts";
 import { seoulNowIso, seoulToday } from "../shared/dates.ts";
+import { applyLookup } from "../shared/applyData.ts";
 
 function App() {
   const [path, setPath] = useState(location.pathname);
@@ -54,17 +55,18 @@ function Home({ session }: { session: SessionInfo | null }) {
     if (autoLookup) {
       setBusy(true);
       try {
-        const res = await lookupPublicData({ address: w.property.address, asOf: w.asOf, months: w.options.recentMonths });
-        if (res.geocode) { w.property.coordinates = { lat: res.geocode.lat, lng: res.geocode.lng, source: res.geocode.source }; w.property.lawdCode = res.geocode.lawdCode; }
-        w.transactions = res.trades;
-        w.dataLog.push({ at: seoulNowIso(), source: "공공·지도 API", detail: res.log.join(" / ") });
+        const res = await lookupPublicData({ address: w.property.address, asOf: w.asOf, months: w.options.recentMonths, radiusM: w.options.radiusM });
+        applyLookup(w, res, seoulNowIso());
       } catch (e) {
         w.dataLog.push({ at: seoulNowIso(), source: "공공·지도 API", detail: `자동 조회 실패: ${(e as Error).message}` });
       } finally { setBusy(false); }
     }
-    const rec = withRun(newManualRecord(newKey("dr"), w, "manual"), "auto-create");
-    const err = draftStore.put(rec);
-    if (err) setMsg({ tone: "bad", text: err });
+    openDraft(withRun(newManualRecord(newKey("dr"), w, "manual"), "auto-create"));
+  };
+
+  /** 탭 저장소가 막혀도 분석은 열되, 메모리에만 있다는 사실을 화면에 표시 */
+  const openDraft = (rec: AnalysisRecord) => {
+    if (draftStore.put(rec)) memoryDrafts.set(rec.key, rec);
     navigate(`/app/d/${rec.key}`);
   };
 
@@ -73,20 +75,25 @@ function Home({ session }: { session: SessionInfo | null }) {
     const d = detectFile(file.name, await file.text());
     if (d.type === "backup") {
       if (!d.records.length) return setMsg({ tone: "bad", text: "복구할 수 있는 분석이 없음", list: d.errors });
-      const errs = d.records.map((r) => localStore.put({ ...r, key: localStore.get(r.key) ? newKey("lc") : r.key })).filter(Boolean) as string[];
+      if (!localStore.available()) return setMsg({ tone: "bad", text: "이 브라우저 저장소를 사용할 수 없어 복구하지 못했습니다(차단). 백업 파일은 그대로 보관하십시오." });
+      let saved = 0, same = 0, copies = 0;
+      const errs: string[] = [];
+      for (const r of d.records) {
+        const res = localStore.putIfAbsent(r);
+        if (res.error) errs.push(res.error);
+        else if (res.result === "saved") saved++;
+        else if (res.result === "same") same++;
+        else { const e2 = localStore.put({ ...r, key: newKey("lc"), title: `${r.title} (복구 사본)` }); e2 ? errs.push(e2) : copies++; }
+      }
       setLocals(localStore.list());
-      return setMsg({ tone: errs.length ? "bad" : "ok", text: `백업에서 ${d.records.length}건을 이 브라우저에 복구함${d.errors.length ? ` (거절 ${d.errors.length}건)` : ""}`, list: [...d.errors, ...errs] });
+      return setMsg({ tone: errs.length ? "bad" : "ok", text: `백업 ${d.records.length}건: 새로 복구 ${saved} · 이미 같은 내용 ${same} · 같은 식별자의 다른 내용은 기존 기록을 덮어쓰지 않고 사본으로 복구 ${copies}${d.errors.length ? ` · 거절 ${d.errors.length}` : ""}${errs.length ? ` · 저장 실패 ${errs.length}` : ""}`, list: [...d.errors, ...errs] });
     }
     if (d.type === "csv" || d.type === "general-json") return setMsg({ tone: "info", text: "실거래 CSV·사건 JSON은 분석을 시작한 뒤 상세 영역에서 가져오십시오." });
     if (d.type === "committee-import" || d.type === "launch-document") return setMsg({ tone: "info", text: "협의체 연동 파일은 입력 규격 확정 전까지 대기 상태입니다. 주소로 새 분석을 시작하십시오." });
     setMsg({ tone: "bad", text: d.errors.join(" ") });
   };
 
-  const loadDemo = () => {
-    const rec = withRun(newManualRecord(newKey("dr"), demoWorking(), "demo"), "auto-create");
-    draftStore.put(rec);
-    navigate(`/app/d/${rec.key}`);
-  };
+  const loadDemo = () => openDraft(withRun(newManualRecord(newKey("dr"), demoWorking(), "demo"), "auto-create"));
 
   return (
     <main className="home">
@@ -120,7 +127,7 @@ function Home({ session }: { session: SessionInfo | null }) {
       <section className="card">
         <h2>저장한 분석 <span className="muted small">이 브라우저에 저장</span></h2>
         <p className="small muted">브라우저 데이터를 지우거나 다른 기기에서는 자동 복구되지 않습니다. 필요하면 JSON 백업을 내려받으십시오.</p>
-        {!localStore.available() && <div className="banner warn">이 브라우저는 로컬 저장을 허용하지 않음 — JSON 내보내기만 사용 가능</div>}
+        {!localStore.available() && <div className="banner bad" data-testid="storage-blocked">이 브라우저 저장소를 사용할 수 없습니다(차단·개인정보 보호 모드 등). ‘이 브라우저에 저장’이 동작하지 않으니 분석 화면의 ‘JSON 내보내기’로 파일을 보관하고, 다시 볼 때 ‘백업 복구’ 대신 파일을 보관해 두십시오.</div>}
         {!locals.length ? <p className="muted">저장한 분석 없음</p> : (
           <table className="tbl" data-testid="local-list"><thead><tr><th>대상</th><th>입력</th><th>기준일</th><th>수정</th><th /></tr></thead>
             <tbody>{locals.map((r) => <tr key={r.key}><td>{r.title}</td><td>{ORIGIN_LABEL[r.origin.kind]}</td><td>{r.working.asOf}</td><td>{r.updatedAt.slice(0, 16).replace("T", " ")}</td><td><button className="link" onClick={() => navigate(`/app/l/${r.key}`)} data-testid="open-local">열기</button></td></tr>)}</tbody></table>
@@ -138,6 +145,7 @@ function Home({ session }: { session: SessionInfo | null }) {
         <ul className="status-list">
           <li>주소→좌표 변환(카카오 로컬): <b>{session?.config.geocoder === "configured" ? "설정됨(실제 호출 미검증)" : "미설정"}</b></li>
           <li>국토교통부 아파트 실거래가: <b>{session?.config.publicData === "configured" ? "설정됨(실제 호출 미검증)" : "미설정"}</b></li>
+          <li>입지 뉴스·고시 자동 수집: <b>미구현</b> — 입지 사건·근거는 모두 사용자 입력으로 표시</li>
           <li>협의체 시동 수신(/launch): <b>{session?.config.launchReceiver === "enabled" ? "활성" : "대기(비활성)"}</b> · 외부 생성형 AI: <b>비활성</b></li>
         </ul>
       </section>

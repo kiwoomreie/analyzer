@@ -7,24 +7,20 @@ import { tmpdir } from "node:os";
 import type { AddressInfo } from "node:net";
 import { createApp, type App } from "../../server/app.ts";
 import { loadConfig } from "../../server/config.ts";
-import { checkTargetUrl, isBlockedIp, safeGet, parseMolitAptTrades, parseKakaoAddress } from "../../server/publicData.ts";
+import { checkTargetUrl, isBlockedIp, safeGet, parseMolitAptTrades, parseKakaoAddress, fetchMolitMonth, regionsAround, samplePoints } from "../../server/publicData.ts";
 
 const FIX = "examples/launch-fixtures";
 const fixture = (f: string) => readFileSync(join(FIX, f), "utf8");
 const logs: string[] = [];
+
+import { mockState, mockTransport, item } from "../helpers/mockPublicApi.ts";
 
 function mk(env: Record<string, string>) {
   const dir = mkdtempSync(join(tmpdir(), "la-test-"));
   const cfg = loadConfig({ DB_PATH: join(dir, "t.db"), WEB_ROOT: "dist/web", COOKIE_SECURE: "false", ...env } as any);
   return createApp(cfg, {
     logger: (e) => logs.push(JSON.stringify(e)),
-    publicDataDeps: {
-      lookup: (_h, cb) => cb(null, [{ address: "203.0.113.10", family: 4 }]),
-      transport: async (u) => {
-        if (u.hostname === "dapi.kakao.com") return { status: 200, headers: {}, body: Buffer.from(JSON.stringify({ documents: [{ x: "127.126", y: "37.412", address: { b_code: "4113510900" } }] })) };
-        return { status: 200, headers: {}, body: Buffer.from("<response><header><resultCode>000</resultCode></header><body><items><item><aptNm>시험단지</aptNm><umdNm>시험동</umdNm><excluUseAr>84.97</excluUseAr><dealAmount> 95,000</dealAmount><dealYear>2026</dealYear><dealMonth>9</dealMonth><dealDay>3</dealDay><floor>7</floor><buildYear>2019</buildYear><cdealType></cdealType></item></items></body></response>") };
-      },
-    },
+    publicDataDeps: { lookup: (_h, cb) => cb(null, [{ address: "203.0.113.10", family: 4 }]), transport: mockTransport },
   });
 }
 
@@ -99,16 +95,58 @@ test("자동 조회 API: 세션·CSRF 필요, 키 미설정이면 503(가상 값
   assert.equal((await r.json()).status, "unset");
 });
 
-test("자동 조회(모의 응답): 주소→좌표·시군구, 실거래 출처·공식 API 표시", async () => {
+async function lookup(body: object) {
   const jar = new Jar();
-  const s = await (await req(keyedBase, "/api/session", jar)).json();
-  const r = await req(keyedBase, "/api/public-data/lookup", jar, { method: "POST", headers: { "content-type": "application/json", "x-csrf-token": s.csrfToken }, body: JSON.stringify({ address: "주소", asOf: "2026-10-31", months: 2 }) });
-  const j = await r.json();
+  const sess = await (await req(keyedBase, "/api/session", jar)).json();
+  return (await req(keyedBase, "/api/public-data/lookup", jar, { method: "POST", headers: { "content-type": "application/json", "x-csrf-token": sess.csrfToken }, body: JSON.stringify(body) })).json();
+}
+
+test("[모의 응답] 주소→좌표 → 반경 주변 시군구 2곳(경계 밖 포함) → 월별 전 페이지 대사 → 단지 좌표", async () => {
+  const j = await lookup({ address: "주소", asOf: "2026-10-31", months: 2, radiusM: 1500 });
   assert.equal(j.geocode.lawdCode, "41135");
-  assert.equal(j.trades.length, 2); // 2개월 × 1건(모의)
+  assert.deepEqual(j.report.regions.map((r: any) => r.code).sort(), ["41133", "41135"]);
+  assert.equal(j.report.months.length, 4); // 2개 시군구 × 2개월
+  assert.ok(j.report.months.every((m: any) => m.ok && m.totalCount === m.collected));
+  assert.equal(j.report.status, "complete");
+  assert.ok(j.trades.some((t: any) => t.complexName === "경계밖단지"));
   assert.equal(j.trades[0].dataMode, "official-api");
-  assert.equal(j.trades[0].priceKrw, 950_000_000);
-  assert.match(j.trades[0].source, /국토교통부/);
+  assert.equal(j.trades.find((t: any) => t.complexName === "시험단지").complexId, "41135-1번지");
+  assert.equal(j.complexes.length, 2);
+});
+
+test("[모의 응답] 한 달 수집 실패·지점 조회 실패 → partial, 누락 가능 안내(완료로 표시하지 않음)", async () => {
+  mockState.failYm = "202609";
+  mockState.failPoints = 2;
+  const j = await lookup({ address: "주소", asOf: "2026-10-31", months: 2, radiusM: 1500 });
+  mockState.failYm = "";
+  mockState.failPoints = 0;
+  assert.equal(j.report.status, "partial");
+  assert.ok(j.report.months.some((m: any) => !m.ok));
+  assert.match(j.report.regionNote, /누락 가능/);
+  assert.ok(j.report.notes.some((n: string) => n.includes("누락 가능성")));
+});
+
+test("[모의 응답] 국토부 여러 페이지 수집과 전체 건수 대사, 중간 페이지 실패·건수 불일치 검출", async () => {
+  const cfg = { serviceKey: "k", endpoint: "https://apis.data.go.kr/x", maxMonths: 12 };
+  const page = (n: number, total: number) => `<response><header><resultCode>000</resultCode></header><body><items>${Array.from({ length: n }, (_, i) => item("P", "동", String(i), 1, "11110")).join("")}</items><totalCount>${total}</totalCount></body></response>`;
+  const lookupOk = (_h: string, cb: any) => cb(null, [{ address: "203.0.113.10", family: 4 }]);
+  const ok = await fetchMolitMonth(cfg, "11110", "202609", { lookup: lookupOk, transport: async (u) => ({ status: 200, headers: {}, body: Buffer.from(page(u.searchParams.get("pageNo") === "3" ? 1 : 2, 5)) }) }, 2);
+  assert.equal(ok.pagesExpected, 3);
+  assert.equal(ok.pagesFetched, 3);
+  assert.equal(ok.collected, 5);
+  assert.equal(ok.ok, true);
+  const fail = await fetchMolitMonth(cfg, "11110", "202609", { lookup: lookupOk, transport: async (u) => (u.searchParams.get("pageNo") === "2" ? { status: 500, headers: {}, body: Buffer.alloc(0) } : { status: 200, headers: {}, body: Buffer.from(page(2, 5)) }) }, 2);
+  assert.equal(fail.ok, false);
+  assert.match(fail.error!, /2쪽/);
+  const mismatch = await fetchMolitMonth(cfg, "11110", "202609", { lookup: lookupOk, transport: async () => ({ status: 200, headers: {}, body: Buffer.from(page(1, 2)) }) }, 2);
+  assert.equal(mismatch.ok, false);
+  assert.match(mismatch.error!, /불일치/);
+});
+
+test("반경 표본 지점 17개(중심+반경·1/2반경 8방위)", async () => {
+  assert.equal(samplePoints({ lat: 37.5, lng: 127 }, 1000).length, 17);
+  const r = await regionsAround("k", { lat: 37.412, lng: 127.126 }, 1500, { lookup: (_h, cb) => cb(null, [{ address: "203.0.113.10", family: 4 }]), transport: mockTransport });
+  assert.equal(r.regions.length, 2);
 });
 
 test("외부 호출 방어: https·허용 호스트만, 사설·메타데이터 주소·리디렉션 차단", async () => {

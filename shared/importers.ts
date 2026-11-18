@@ -4,7 +4,7 @@ import { isSecretLike, isForbiddenKey, scanSafety, type SafetyIssue } from "./sa
 import { validateContractDocument, type ContractValidation } from "./validate.ts";
 import { parseDateValue } from "./dates.ts";
 import {
-  ANALYSIS_FORMAT, newKey, type AnalysisRecord, type DataMode, type Evidence,
+  ANALYSIS_FORMAT, migrateRecord, newKey, type AnalysisRecord, type DataMode, type Evidence,
   type LocationEvent, type Transaction, type WorkingInputs,
 } from "./model.ts";
 
@@ -82,10 +82,15 @@ const HEADER_MAP: Record<string, keyof RawTx> = {
   계약년월: "ym", dealym: "ym", 계약일자: "day",
   해제여부: "cancelled", cdealtype: "cancelled", cancelled: "cancelled",
   해제사유발생일: "cancelDate", cdealday: "cancelDate",
-  법정동: "dong", umdnm: "dong", 동: "dong",
+  법정동: "dong", umdnm: "dong",
+  지번: "jibun", jibun: "jibun",
+  시군구코드: "sggCd", sggcd: "sggCd",
+  단지코드: "complexId", 단지일련번호: "complexId", aptseq: "complexId",
+  동: "aptDong", aptdong: "aptDong",
+  거래id: "officialId", 거래번호: "officialId", tradeid: "officialId",
   건축년도: "buildYear", 준공연도: "buildYear", buildyear: "buildYear",
 };
-interface RawTx { complexName?: string; area?: string; floor?: string; priceMan?: string; priceKrw?: string; contractDate?: string; ym?: string; day?: string; cancelled?: string; cancelDate?: string; dong?: string; buildYear?: string }
+interface RawTx { complexName?: string; area?: string; floor?: string; priceMan?: string; priceKrw?: string; contractDate?: string; ym?: string; day?: string; cancelled?: string; cancelDate?: string; dong?: string; jibun?: string; sggCd?: string; complexId?: string; aptDong?: string; officialId?: string; buildYear?: string }
 
 export interface ImportOutcome<T> { ok: boolean; items: T[]; errors: string[]; skipped: number }
 
@@ -125,6 +130,9 @@ export function transactionsFromCsv(text: string, dataMode: DataMode = "user", s
       key: newKey("tx"), complexName: raw.complexName.slice(0, 80), exclusiveAreaM2: area, floor: Number.isFinite(toNum(raw.floor)) ? toNum(raw.floor) : undefined,
       priceKrw: Math.round(price), contractDate: cd, cancelled: canc !== "" && canc !== "0" && canc.toLowerCase() !== "n" && canc !== "아니오",
       cancelDate: raw.cancelDate || undefined, dong: raw.dong ? raw.dong.slice(0, 40) : undefined,
+      jibun: raw.jibun ? raw.jibun.slice(0, 40) : undefined, sggCd: raw.sggCd && /^\d{5}$/.test(raw.sggCd) ? raw.sggCd : undefined,
+      complexId: raw.complexId ? raw.complexId.slice(0, 40) : undefined, aptDong: raw.aptDong ? raw.aptDong.slice(0, 20) : undefined,
+      officialId: raw.officialId ? raw.officialId.slice(0, 80) : undefined,
       buildYear: Number.isFinite(toNum(raw.buildYear)) ? toNum(raw.buildYear) : undefined, dataMode, source: source.slice(0, 120),
     });
   });
@@ -158,7 +166,8 @@ export function generalJsonImport(data: unknown): { ok: boolean; result?: Genera
   }));
   const transactions: Transaction[] = arr(d.transactions).flatMap((t: any) => {
     if (!t || typeof t.complexName !== "string" || !(t.exclusiveAreaM2 > 0) || !(t.priceKrw > 0) || !parseDateValue(t.contractDate)) { errs.push("거래 1건 형식 오류 — 건너뜀"); return []; }
-    return [{ key: newKey("tx"), complexName: t.complexName, dong: typeof t.dong === "string" ? t.dong : undefined, exclusiveAreaM2: t.exclusiveAreaM2, floor: t.floor, priceKrw: Math.round(t.priceKrw), contractDate: t.contractDate, cancelled: !!t.cancelled, cancelDate: t.cancelDate, buildYear: t.buildYear, dataMode: mode, source: String(d.source ?? "사용자 JSON").slice(0, 120) } as Transaction];
+    const str = (v: unknown, n: number) => (typeof v === "string" && v ? v.slice(0, n) : undefined);
+    return [{ key: newKey("tx"), complexName: t.complexName, dong: str(t.dong, 40), jibun: str(t.jibun, 40), sggCd: str(t.sggCd, 5), complexId: str(t.complexId, 40), aptDong: str(t.aptDong, 20), officialId: str(t.officialId, 80), exclusiveAreaM2: t.exclusiveAreaM2, floor: t.floor, priceKrw: Math.round(t.priceKrw), contractDate: t.contractDate, cancelled: !!t.cancelled, cancelDate: t.cancelDate, buildYear: t.buildYear, dataMode: mode, source: String(d.source ?? "사용자 JSON").slice(0, 120) } as Transaction];
   });
   return { ok: true, result: { events, evidence, transactions }, errors: errs.slice(0, 10) };
 }
@@ -193,6 +202,7 @@ export function makeBackup(records: AnalysisRecord[], exportedAt: string) {
 export function restoreBackup(data: any): DetectedFile {
   const errors: string[] = [];
   if (data.formatVersion !== 1 || !Array.isArray(data.analyses)) return { type: "backup", records: [], errors: ["백업 형식 버전 오류"] };
+  data.analyses.forEach((r: any) => { if (r?.working && r?.original?.working) migrateRecord(r); });
   const recs: AnalysisRecord[] = [];
   for (const [i, r] of data.analyses.entries()) {
     if (r?.format !== ANALYSIS_FORMAT || r.formatVersion !== 1 || !r.working || !r.original?.working) { errors.push(`analyses[${i}]: 형식 오류`); continue; }

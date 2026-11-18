@@ -15,10 +15,10 @@ const C = "2026-10-31";
 const SRC = "[가상] 데모 거래 생성기";
 
 const EVIDENCE: Evidence[] = [
-  { key: "evd_d1", publisher: "[가상] 국토교통부", title: "[가상] 가람선 광역철도 기본계획 고시", sourceRef: "[가상] 고시 제2024-000호", publishedOn: "2024-02-20", effectiveOn: "2024-02-20", checkedOn: C, pageOrSection: "[가상] 3쪽 2절", fact: "[가상] 누리역(가칭) 신설 포함", status: "confirmed", linked: ["ev_rail"], dataMode: "demo" },
-  { key: "evd_d2", publisher: "[가상] 국가철도공단", title: "[가상] 가람선 추진현황 보도자료", publishedOn: "2026-05-20", checkedOn: C, pageOrSection: "[가상] 본문 2문단", fact: "[가상] 개통 목표 2029년 12월 → 2031년 6월 조정", status: "confirmed", linked: ["ev_rail"], dataMode: "demo" },
-  { key: "evd_d3", publisher: "[가상] 누리시", title: "[가상] 첨단업무지구 개발계획 승인 공고", publishedOn: "2024-04-10", checkedOn: C, fact: "[가상] 개발계획 승인. 입주 기업은 미확정", status: "needsApplicability", linked: ["ev_biz"], dataMode: "demo" },
-  { key: "evd_d4", publisher: "[가상] 분양 광고", title: "[가상] 하늘마을 3블록 분양 안내", publishedOn: "2026-08-01", checkedOn: C, fact: "[가상] 세대수 표기가 인허가 자료와 다름", status: "inconsistent", linked: ["ev_sup1"], dataMode: "demo" },
+  { key: "evd_d1", sourceType: "official", originalReviewed: true, publisher: "[가상] 국토교통부", title: "[가상] 가람선 광역철도 기본계획 고시", sourceRef: "[가상] 고시 제2024-000호", publishedOn: "2024-02-20", effectiveOn: "2024-02-20", checkedOn: C, pageOrSection: "[가상] 3쪽 2절", fact: "[가상] 누리역(가칭) 신설 포함", status: "confirmed", linked: ["ev_rail"], dataMode: "demo" },
+  { key: "evd_d2", sourceType: "press", publisher: "[가상] 국가철도공단", title: "[가상] 가람선 추진현황 보도자료", publishedOn: "2026-05-20", checkedOn: C, pageOrSection: "[가상] 본문 2문단", fact: "[가상] 개통 목표 2029년 12월 → 2031년 6월 조정", status: "confirmed", linked: ["ev_rail"], dataMode: "demo" },
+  { key: "evd_d3", sourceType: "official", publisher: "[가상] 누리시", title: "[가상] 첨단업무지구 개발계획 승인 공고", publishedOn: "2024-04-10", checkedOn: C, fact: "[가상] 개발계획 승인. 입주 기업은 미확정", status: "needsApplicability", linked: ["ev_biz"], dataMode: "demo" },
+  { key: "evd_d4", sourceType: "marketing", publisher: "[가상] 분양 광고", title: "[가상] 하늘마을 3블록 분양 안내", publishedOn: "2026-08-01", checkedOn: C, fact: "[가상] 세대수 표기가 인허가 자료와 다름", status: "inconsistent", linked: ["ev_sup1"], dataMode: "demo" },
 ];
 
 const EVENTS: LocationEvent[] = [
@@ -81,7 +81,7 @@ function demoTransactions(): { tx: Transaction[]; info: ComplexInfo[] } {
   const tx: Transaction[] = [];
   const info: ComplexInfo[] = [];
   for (const [name, dong, by, lat, lng, base, rate] of COMPLEXES) {
-    info.push({ complexKey: complexKeyOf({ complexName: name, dong }), location: { lat, lng } });
+    info.push({ complexKey: complexKeyOf({ complexName: name, dong }), location: { lat, lng }, locationSource: "[가상] 데모 좌표" });
     for (let y = 2021; y <= 2026; y++) for (let m = 1; m <= 12; m++) {
       if (y === 2026 && m > 10) break;
       const t = (y - 2021) * 12 + m - 1;

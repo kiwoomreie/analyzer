@@ -65,3 +65,6 @@ code{background:#f0f2f5;padding:0 4px;border-radius:3px;font-size:12px}
 .start .primary{font-size:15px;padding:8px 18px}
 .sub-details{margin:10px 0}.sub-details>summary{cursor:pointer;color:var(--accent)}
 .banner.info{background:var(--infobg)}
+.table-scroll{overflow-x:auto;max-width:100%}
+@media (max-width:600px){main{padding:10px 10px 48px}.top{padding:10px 12px}.view-head{flex-direction:column}.actions{min-width:0;flex-direction:row;flex-wrap:wrap}.form.grid{grid-template-columns:1fr}.start .addr-row{flex-direction:column}.card .tbl{display:block;overflow-x:auto}.kv{grid-template-columns:1fr}.kv dt{margin-top:6px}}
+[data-testid=complex-table] td .field input,[data-testid=complex-table] td .field select{width:96px}[data-testid=tx-table] td .field input{width:120px}

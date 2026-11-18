@@ -3,13 +3,15 @@ import { Badge, DateText, MapPanel, ModeBadge, Num, Section, Select, Text } from
 import type { SectionProps } from "../AnalysisView.tsx";
 import { CoordField } from "./InputSection.tsx";
 import {
-  EVENT_CATEGORY_LABEL, EVIDENCE_STATUS_LABEL, MILESTONE_LABEL, SUPPLY_STAGE_LABEL, newKey,
+  EVENT_CATEGORY_LABEL, EVIDENCE_LEVEL_LABEL, EVIDENCE_SOURCE_LABEL, EVIDENCE_STATUS_LABEL, MILESTONE_LABEL, SUPPLY_STAGE_LABEL, newKey, type EvidenceSourceType,
   type EventCategory, type EvidenceStatus, type LocationEvent, type MilestoneType, type SupplyStage,
 } from "../../shared/model.ts";
 import { generalJsonImport } from "../../shared/importers.ts";
 import { isSecretLike } from "../../shared/safety.ts";
 import { sha256Hex } from "../../shared/hash.ts";
 import { formatDateValue, seoulNowIso, seoulToday } from "../../shared/dates.ts";
+import { evidenceLevel } from "../../shared/analysis.ts";
+import { Check } from "../components.tsx";
 
 const DIR: [LocationEvent["direction"], string][] = [["favorable", "유리"], ["adverse", "불리"], ["mixed", "혼재"], ["unknown", "미확인"]];
 const TEXT_TYPES = [".txt", ".md", ".csv", ".json"];
@@ -64,6 +66,8 @@ export function EventsSection({ rec, update, session }: SectionProps) {
 
   return (
     <Section id="sec-events" title="입지 사건·근거 상세" summary={`사건 ${w.events.length}건 · 근거 ${w.evidence.length}건 · 첨부 ${w.attachments.length}건`}>
+      <div className="banner muted small" data-testid="no-auto-collect">입지 뉴스·고시 <b>자동 수집 기능은 없습니다.</b> 아래 사건·일정·근거는 모두 사용자가 입력한 것이며 ‘사용자 입력’으로 표시됩니다. 분석 기준일 이후 처음 알려진 사건·근거와 기준일 이전에 취소가 알려진 공급은 결과에서 제외됩니다.</div>
+      {r.excludedEvents.length > 0 && <p className="small warn-text">기준일 이후 처음 알려진 사건(분석 제외): {r.excludedEvents.map((e) => `${e.name}(${e.firstKnown})`).join(", ")}</p>}
       <div className="toolbar">
         <button onClick={() => addEvent("transport")} data-testid="add-event-transport">교통</button>
         <button onClick={() => addEvent("amenity")}>생활편의</button>
@@ -136,6 +140,7 @@ export function EventsSection({ rec, update, session }: SectionProps) {
                 <div>기준일 현재 단계: <b>{er.stageAsOf}</b> · 최초 예정 {formatDateValue(er.initialTarget)} → 현재 {formatDateValue(er.expectedTarget)} {er.delayCount ? `(지연 ${er.delayCount}회)` : ""}</div>
                 <div>본건 일정 비교: {er.scheduleGaps.length ? er.scheduleGaps.map((g) => g.text).join(" · ") : "본건 분양·준공 예정일 미입력 — 비교 안 함"}</div>
                 <div>접근성: {er.access.text}</div>
+                <div>근거 기록: {er.evidence.text}{er.evidence.afterAsOf ? ` · 기준일 이후 발행 근거 ${er.evidence.afterAsOf}건 제외` : ""}</div>
               </div>
             )}
 
@@ -160,48 +165,53 @@ export function EventsSection({ rec, update, session }: SectionProps) {
 function EvidenceList({ rec, update, eventKey, eventIdx }: { rec: SectionProps["rec"]; update: SectionProps["update"]; eventKey: string; eventIdx: number }) {
   const w = rec.working;
   const linked = w.evidence.filter((e) => w.events[eventIdx].evidenceKeys.includes(e.key));
-  const [draft, setDraft] = useState<{ publisher?: string; title?: string; sourceRef?: string; sourceUrl?: string; publishedOn?: string; effectiveOn?: string; pageOrSection?: string; fact?: string; status: EvidenceStatus; attachmentKey?: string }>({ status: "confirmed" });
+  type Draft = { publisher?: string; title?: string; sourceType: EvidenceSourceType; originalReviewed: boolean; sourceRef?: string; sourceUrl?: string; publishedOn?: string; effectiveOn?: string; pageOrSection?: string; fact?: string; status: EvidenceStatus; attachmentKey?: string };
+  const empty: Draft = { status: "needsApplicability", sourceType: "other", originalReviewed: false };
+  const [draft, setDraft] = useState<Draft>(empty);
   const add = () => {
     if (!draft.publisher || !draft.title || !draft.fact) return;
     const key = newKey("evd");
     update((x) => {
-      x.evidence.push({ key, publisher: draft.publisher!, title: draft.title!, sourceRef: draft.sourceRef, sourceUrl: draft.sourceUrl, attachmentKey: draft.attachmentKey, publishedOn: draft.publishedOn, effectiveOn: draft.effectiveOn, checkedOn: seoulToday(), pageOrSection: draft.pageOrSection, fact: draft.fact!, status: draft.status, linked: [eventKey], dataMode: "user" });
+      x.evidence.push({ key, publisher: draft.publisher!, title: draft.title!, sourceType: draft.sourceType, originalReviewed: draft.originalReviewed, sourceRef: draft.sourceRef, sourceUrl: draft.sourceUrl, attachmentKey: draft.attachmentKey, publishedOn: draft.publishedOn, effectiveOn: draft.effectiveOn, checkedOn: seoulToday(), pageOrSection: draft.pageOrSection, fact: draft.fact!, status: draft.status, linked: [eventKey], dataMode: "user" });
       x.events[eventIdx].evidenceKeys.push(key);
     });
-    setDraft({ status: "confirmed" });
+    setDraft(empty);
   };
   return (
     <>
       <table className="tbl small">
-        <thead><tr><th>발행기관·문서</th><th>발표/적용/확인</th><th>페이지·절</th><th>확인한 사실</th><th>상태</th><th /></tr></thead>
+        <thead><tr><th>출처</th><th>발행일/자료 기준일/확인일</th><th>페이지·절</th><th>확인한 사실</th><th>기록 수준</th><th>내용 판단</th><th /></tr></thead>
         <tbody>
           {linked.map((e) => {
             const i = w.evidence.findIndex((x) => x.key === e.key);
             return (
               <tr key={e.key}>
-                <td>{e.publisher} · {e.title}{e.sourceRef ? ` (${e.sourceRef})` : ""}{e.sourceUrl && <div className="muted">참고 주소(조회하지 않음): <code>{e.sourceUrl}</code></div>}{e.attachmentKey && <div className="muted">첨부: {w.attachments.find((a) => a.key === e.attachmentKey)?.filename ?? "삭제됨"}</div>}</td>
+                <td><span className="muted">[{e.sourceType ? EVIDENCE_SOURCE_LABEL[e.sourceType] : "종류 미기재"}]</span> {e.publisher} · {e.title}{e.sourceRef ? ` (${e.sourceRef})` : ""}{e.sourceUrl && <div className="muted">참고 주소(조회하지 않음): <code>{e.sourceUrl}</code></div>}{e.attachmentKey && <div className="muted">첨부: {w.attachments.find((a) => a.key === e.attachmentKey)?.filename ?? "삭제됨"}</div>}</td>
                 <td>{e.publishedOn ?? "-"} / {e.effectiveOn ?? "-"} / {e.checkedOn ?? "-"}</td>
                 <td>{e.pageOrSection ?? "-"}</td>
                 <td>{e.fact}</td>
+                <td data-testid="evidence-level">{EVIDENCE_LEVEL_LABEL[evidenceLevel(e)]}</td>
                 <td><Select label="" value={e.status} options={Object.entries(EVIDENCE_STATUS_LABEL) as [EvidenceStatus, string][]} onChange={(v) => update((x) => { x.evidence[i].status = v; })} /> <ModeBadge mode={e.dataMode} /></td>
                 <td><button className="link" onClick={() => update((x) => { x.events[eventIdx].evidenceKeys = x.events[eventIdx].evidenceKeys.filter((k) => k !== e.key); })}>연결 해제</button></td>
               </tr>
             );
           })}
-          {!linked.length && <tr><td colSpan={6} className="muted">연결된 근거 없음 — 공식 문서로 확인하기 전까지 ‘확인된 사실’로 보지 않음</td></tr>}
+          {!linked.length && <tr><td colSpan={7} className="muted">연결된 근거 없음</td></tr>}
         </tbody>
       </table>
       <div className="card sub">
-        <b className="small">근거 추가</b> <span className="muted small">직접 읽은 문서만 기록(읽지 않은 문서의 인용·페이지를 만들지 않음)</span>
+        <b className="small">근거 추가</b> <span className="muted small">직접 읽은 문서만 기록. ‘공식 원문 대조 기록’ 수준은 공공기관 원문 + 문서번호 또는 첨부 + 페이지·절 + 발행일 + ‘원문 직접 대조’ 표시가 모두 있어야 하며, 그래도 앱이 자동 검증한 것은 아닙니다.</span>
         <div className="form grid">
           <Text label="발행기관" value={draft.publisher} onChange={(v) => setDraft({ ...draft, publisher: v })} testId="evd-publisher" />
           <Text label="문서명" value={draft.title} onChange={(v) => setDraft({ ...draft, title: v })} testId="evd-title" />
-          <Text label="원문 식별자(문서번호 등)" value={draft.sourceRef} onChange={(v) => setDraft({ ...draft, sourceRef: v })} />
+          <Select label="출처 종류" value={draft.sourceType} options={Object.entries(EVIDENCE_SOURCE_LABEL) as [EvidenceSourceType, string][]} onChange={(v) => setDraft({ ...draft, sourceType: v })} testId="evd-source-type" />
+          <Text label="원문 식별자(문서번호 등)" value={draft.sourceRef} onChange={(v) => setDraft({ ...draft, sourceRef: v })} testId="evd-ref" />
           <Text label="참고 주소(텍스트로만 보관)" value={draft.sourceUrl} onChange={(v) => setDraft({ ...draft, sourceUrl: v })} />
-          <DateText label="발표일" value={draft.publishedOn} onChange={(v) => setDraft({ ...draft, publishedOn: v })} />
-          <DateText label="적용일" value={draft.effectiveOn} onChange={(v) => setDraft({ ...draft, effectiveOn: v })} />
-          <Text label="페이지·절" value={draft.pageOrSection} onChange={(v) => setDraft({ ...draft, pageOrSection: v })} />
-          <Select label="확인 상태" value={draft.status} options={Object.entries(EVIDENCE_STATUS_LABEL) as [EvidenceStatus, string][]} onChange={(v) => setDraft({ ...draft, status: v })} />
+          <DateText label="발행일" value={draft.publishedOn} onChange={(v) => setDraft({ ...draft, publishedOn: v })} testId="evd-published" />
+          <DateText label="자료 기준일·적용일" value={draft.effectiveOn} onChange={(v) => setDraft({ ...draft, effectiveOn: v })} />
+          <Text label="페이지·절" value={draft.pageOrSection} onChange={(v) => setDraft({ ...draft, pageOrSection: v })} testId="evd-page" />
+          <Check label="공식 원문을 직접 대조함" checked={draft.originalReviewed} onChange={(v) => setDraft({ ...draft, originalReviewed: v })} testId="evd-reviewed" />
+          <Select label="내용 판단" value={draft.status} options={Object.entries(EVIDENCE_STATUS_LABEL) as [EvidenceStatus, string][]} onChange={(v) => setDraft({ ...draft, status: v })} />
           <Select label="첨부 연결" value={draft.attachmentKey} allowEmpty options={w.attachments.map((a) => [a.key, a.filename] as [string, string])} onChange={(v) => setDraft({ ...draft, attachmentKey: v || undefined })} />
           <Text label="확인한 사실" value={draft.fact} onChange={(v) => setDraft({ ...draft, fact: v })} wide testId="evd-fact" />
         </div>

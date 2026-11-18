@@ -1,6 +1,7 @@
 // 보고서 출력(Markdown). 숫자는 runAnalysis 결과에서만 가져오며 새로 추정하지 않는다.
 import type { AnalysisResult, ComplexResult } from "./analysis.ts";
-import { APP_NAME, DATA_MODE_LABEL, EVIDENCE_STATUS_LABEL, ORIGIN_LABEL, type AnalysisRecord, type WorkingInputs } from "./model.ts";
+import { APP_NAME, DATA_MODE_LABEL, EVIDENCE_LEVEL_LABEL, EVIDENCE_SOURCE_LABEL, EVIDENCE_STATUS_LABEL, ORIGIN_LABEL, type AnalysisRecord, type WorkingInputs } from "./model.ts";
+import { evidenceLevel } from "./analysis.ts";
 import { stableStringify } from "./hash.ts";
 import { fmtMan, fmtNum } from "./units.ts";
 
@@ -8,10 +9,16 @@ const esc = (s: string) => s.replace(/\|/g, "\\|").replace(/\r?\n/g, " ");
 const dist = (m: number | null) => (m === null ? "미확인" : `${Math.round(m).toLocaleString("ko-KR")}m`);
 const yd = (d: number | null) => (d === null ? "-" : `${d > 0 ? "+" : ""}${d}년`);
 
+/** 결과를 만든 실행 당시 입력(없으면 현재 작업본) */
+export function inputOf(rec: AnalysisRecord, r: AnalysisResult): WorkingInputs {
+  return rec.runs.find((x) => x.result === r || x.inputHash === r.inputHash)?.input ?? rec.working;
+}
+
 function header(rec: AnalysisRecord, r: AnalysisResult, title: string): string[] {
+  const w = inputOf(rec, r);
   return [
     `# ${title}`, "",
-    `- 대상: ${esc(rec.working.property.displayName ? `${rec.working.property.displayName} (${rec.working.property.address})` : rec.working.property.address)}`,
+    `- 대상: ${esc(w.property.displayName ? `${w.property.displayName} (${w.property.address})` : w.property.address)}`,
     `- 분석 기준일: ${r.asOf} · 금액 단위: 만원(원 단위 계산) · 면적: 전용㎡ · 입력: ${ORIGIN_LABEL[rec.origin.kind]}`,
     `- 작성: ${APP_NAME} 엔진 ${r.engineVersion} · 입력 해시 ${r.inputHash.slice(0, 12)}`, "",
   ];
@@ -43,10 +50,11 @@ export function reportSummary(rec: AnalysisRecord, r: AnalysisResult): string {
 }
 
 function appendix(rec: AnalysisRecord, r: AnalysisResult): string {
-  const w = rec.working;
-  const L = ["## 근거 부록", "", "### A. 근거 자료", "", "| 발행기관 | 문서명 | 발표일 | 확인일 | 페이지·절 | 확인한 사실 | 상태 | 자료 |", "|---|---|---|---|---|---|---|---|"];
-  if (!w.evidence.length) L.push("| - | 등록된 근거 없음 | | | | | | |");
-  w.evidence.forEach((e) => L.push(`| ${esc(e.publisher)} | ${esc(e.title)}${e.sourceRef ? ` (${esc(e.sourceRef)})` : ""} | ${e.publishedOn ?? "-"} | ${e.checkedOn ?? "-"} | ${esc(e.pageOrSection ?? "-")} | ${esc(e.fact)} | ${EVIDENCE_STATUS_LABEL[e.status]} | ${DATA_MODE_LABEL[e.dataMode]} |`));
+  const w = inputOf(rec, r);
+  const L = ["## 근거 부록", "", "> 입지 뉴스·고시 자동 수집·자동 검증 기능은 없음. 아래 근거는 모두 사용자가 기록한 것임.", "", "### A. 근거 자료", "", "| 출처 종류 | 발행기관 | 문서명 | 발행일 | 자료 기준일 | 확인일 | 페이지·절 | 확인한 사실 | 기록 수준 | 내용 판단 |", "|---|---|---|---|---|---|---|---|---|---|"];
+  if (!w.evidence.length) L.push("| - | - | 등록된 근거 없음 | | | | | | | |");
+  w.evidence.forEach((e) => L.push(`| ${e.sourceType ? EVIDENCE_SOURCE_LABEL[e.sourceType] : "미기재"} | ${esc(e.publisher)} | ${esc(e.title)}${e.sourceRef ? ` (${esc(e.sourceRef)})` : ""} | ${e.publishedOn ?? "-"} | ${e.effectiveOn ?? "-"} | ${e.checkedOn ?? "-"} | ${esc(e.pageOrSection ?? "-")} | ${esc(e.fact)} | ${EVIDENCE_LEVEL_LABEL[evidenceLevel(e)]} | ${EVIDENCE_STATUS_LABEL[e.status]} |`));
+  if (r.excludedEvents.length) L.push("", `- 기준일 이후 처음 알려진 사건(분석 제외): ${r.excludedEvents.map((e) => `${esc(e.name)}(${e.firstKnown})`).join(", ")}`);
   L.push("", "### B. 입지 사건 일정", "");
   r.events.forEach((e) => {
     L.push(`**${esc(e.name)}** (${e.categoryLabel}, ${DATA_MODE_LABEL[e.dataMode]}) — ${e.stageAsOf}`, "", "| 구분 | 예정/실제 | 적용일 | 발표일 | 수집일 | 기준일 반영 |", "|---|---|---|---|---|---|");
@@ -57,7 +65,8 @@ function appendix(rec: AnalysisRecord, r: AnalysisResult): string {
   L.push("### C. 비교거래 범위·출처", "",
     `- 최근 ${m.recentWindow.months}개월(${m.recentWindow.start}~${m.recentWindow.end}), 유사면적 ${m.areaFilter ? `${fmtNum(m.areaFilter.minM2, 1)}~${fmtNum(m.areaFilter.maxM2, 1)}㎡` : "필터 없음(전용면적 미입력)"}, 반경 ${w.options.radiusM.toLocaleString("ko-KR")}m, 준공연도 차이 ${w.options.buildYearBand}년 이내`,
     `- 거래 ${w.transactions.length}건 중 유효 ${m.validTrades}건, 대표 비교단지 포함 ${m.pooled.count}건 · 제외 사유: ${Object.entries(m.excludedTrades).map(([k, v]) => `${k} ${v}`).join(", ") || "없음"}`,
-    `- 출처: ${m.sources.join(", ") || "없음"}`,
+    `- 거리 미확인 확인 필요 후보(통계 제외): ${m.needsCheck.length ? m.needsCheck.map((c) => esc(c.name)).join(", ") : "없음"}`,
+    `- 출처: ${m.sources.join(", ") || "없음"}${r.collection ? ` · ${r.collection.text}` : ""}`,
     "- 동일 단지·면적·유사층 거래를 같은 호실의 반복거래로 보지 않음. 거래 건수가 많아도 통계적 타당성을 보장하지 않음.", "",
     "| 제외·순위 밖 단지 | 사유 |", "|---|---|",
     ...m.complexes.filter((c) => c.status !== "selected").map((c) => `| ${esc(c.name)} | ${esc(c.reasons.join(", "))} |`));
@@ -70,13 +79,13 @@ export function reportQuestions(rec: AnalysisRecord, r: AnalysisResult): string 
   const q: string[] = [];
   r.missing.forEach((m) => q.push(`${m.label} 자료 제공 가능 여부 (${m.affects}에 필요)`));
   r.events.forEach((e) => {
-    if (!e.evidence.confirmedOfficial) q.push(`「${e.name}」의 공식 고시·승인 문서(문서번호·페이지 포함)`);
+    if (!e.evidence.originalChecked) q.push(`「${e.name}」의 공식 고시·승인 원문(문서번호·페이지 포함)`);
     if (e.delayCount) q.push(`「${e.name}」의 지연 사유와 최신 공식 일정의 근거`);
     if (e.category !== "supply" && e.access.walkMinutes === null) q.push(`본건에서 「${e.name}」까지 실제 보행 경로·소요시간 자료`);
     if (e.prepricing?.assessment === "possible") q.push(`검토가격에 「${e.name}」 기대를 반영했는지, 반영했다면 방법과 근거`);
   });
   if (r.price.position === "above") q.push(`검토가격이 대표 비교단지 단가 범위를 넘는 근거(상품·브랜드·층·향·신축 여부 등)`);
-  r.market.comparables.filter((c) => c.distanceM === null).forEach((c) => q.push(`비교단지 「${c.name}」의 위치(본건과의 거리) 확인`));
+  r.market.needsCheck.slice(0, 10).forEach((c) => q.push(`확인 필요 후보 「${c.name}」(${c.identityBasis})의 위치(본건과의 거리)`));
   r.supply.rows.filter((s) => s.timing === "yes").forEach((s) => q.push(`경쟁 공급 「${s.name}」(${s.stage})과의 가격대·상품 차별화 근거`));
   L.push(...(q.length ? q.map((x, i) => `${i + 1}. ${x}`) : ["- 추가 확인 질문 없음"]));
   return L.join("\n");
@@ -84,7 +93,7 @@ export function reportQuestions(rec: AnalysisRecord, r: AnalysisResult): string 
 
 export function reportDraft(rec: AnalysisRecord, r: AnalysisResult): string {
   const L = header(rec, r, "아파트 입지·가격 검토 보고서 초안");
-  const w = rec.working;
+  const w = inputOf(rec, r);
   L.push("## 1. 검토 대상");
   L.push(`- 본건 소재지는 ${w.property.address}임.`);
   L.push(`- 비교 타입 전용면적은 ${r.property.exclusiveAreaM2 ? `${fmtNum(r.property.exclusiveAreaM2)}㎡(${fmtNum(r.property.exclusivePyeong)}전용평)` : "미입력"}이며, 준공(예정)연도는 ${r.property.buildYear ?? "미입력"}임.`);
@@ -93,7 +102,7 @@ export function reportDraft(rec: AnalysisRecord, r: AnalysisResult): string {
   if (!r.events.length) L.push("- 검토 대상 입지 사건이 입력되지 않았음.");
   r.events.forEach((e) => {
     L.push(`- 「${e.name}」(${e.categoryLabel})은 기준일 현재 ${e.stageAsOf} 상태임.${e.expectedTarget ? ` ${e.expectedTargetStatus === "actual" ? "완료" : "예정"} 시점은 ${e.expectedTarget.raw}임.` : ""}`);
-    L.push(`  - 근거 ${e.evidence.total}건 중 확인된 사실은 ${e.evidence.byStatus.confirmed}건임.${e.evidence.confirmedOfficial ? "" : " 공식 자료로 확인되지 않았음."}`);
+    L.push(`  - 근거 기록: ${e.evidence.text}임.${e.evidence.originalChecked ? " 원문 대조는 사용자 기록이며 앱이 자동 검증한 것은 아님." : " 공식 원문 대조 기록이 없음."}`);
     e.scheduleGaps.forEach((g) => L.push(`  - 일정은 ${g.text}임.`));
     if (e.category !== "supply") L.push(`  - 접근성: ${e.access.text}임.`);
   });

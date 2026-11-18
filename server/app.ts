@@ -12,11 +12,11 @@ import {
 import { ensureWorkspace, findWorkspace, requireWriteAccess } from "./session.ts";
 import { validateContractDocument } from "../shared/validate.ts";
 import { hashOf, stableStringify } from "../shared/hash.ts";
-import { recordFromContract, type AnalysisRecord, type WorkingInputs } from "../shared/model.ts";
+import { complexKeyOf, recordFromContract, type AnalysisRecord, type CollectionReport, type Transaction, type WorkingInputs } from "../shared/model.ts";
 import { runAnalysis } from "../shared/analysis.ts";
 import { checkWorkingShape, scanWorking } from "../shared/importers.ts";
 import { seoulNowIso } from "../shared/dates.ts";
-import { fetchMolitAptTrades, geocodeKakao, OutboundBlocked, type SafeFetchDeps } from "./publicData.ts";
+import { fetchMolitAptTrades, fetchMolitMonth, geocodeComplex, geocodeKakao, OutboundBlocked, regionsAround, type RegionInfo, type SafeFetchDeps } from "./publicData.ts";
 
 const MIME: Record<string, string> = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".svg": "image/svg+xml", ".png": "image/png", ".ico": "image/x-icon", ".json": "application/json" };
 
@@ -235,28 +235,81 @@ export function createApp(cfg: AppConfig, deps: AppDeps = {}): App {
       requireWriteAccess(db, req, t);
       const body = await readJson(req);
       if (!cfg.molit.serviceKey && !cfg.kakaoRestKey) return sendJson(res, 503, { status: "unset", message: "공공데이터·지도 키 미설정 — 자동 조회 불가" });
-      const address = typeof body?.address === "string" ? body.address.slice(0, 200) : "";
-      const asOf = typeof body?.asOf === "string" && /^\d{4}-\d{2}-\d{2}$/.test(body.asOf) ? body.asOf : null;
-      if (!address || !asOf) throw new HttpError(400, "INPUT", "address·asOf 필요");
-      const log: string[] = [];
-      let geocode = null;
-      if (cfg.kakaoRestKey) {
-        try { geocode = await geocodeKakao(cfg.kakaoRestKey, address, deps.publicDataDeps); log.push(geocode ? "주소→좌표 변환 완료" : "주소 검색 결과 없음"); }
-        catch (e) { log.push(`주소 검색 실패(${e instanceof OutboundBlocked ? e.code : "오류"})`); }
-      } else log.push("주소→좌표: 지도 키 미설정");
-      const lawd = (typeof body?.lawdCode === "string" && /^\d{5}$/.test(body.lawdCode) ? body.lawdCode : null) ?? geocode?.lawdCode ?? null;
-      let trades: any[] = [];
-      if (!cfg.molit.serviceKey) log.push("실거래: 공공데이터 키 미설정");
-      else if (!lawd) log.push("실거래: 시군구 코드 확인 불가");
-      else {
-        const months = Math.min(Math.max(Number(body?.months) || 12, 1), cfg.molit.maxMonths);
-        const r = await fetchMolitAptTrades(cfg.molit, lawd, recentMonths(asOf, months), deps.publicDataDeps);
-        trades = r.items;
-        log.push(`실거래 ${r.items.length}건(${months}개월, 시군구 ${lawd})${r.errors.length ? ` · 오류 ${r.errors.slice(0, 3).join(", ")}` : ""}`);
-      }
-      return sendJson(res, 200, { geocode, trades, log });
+      const out = await collectPublicData(body);
+      return sendJson(res, 200, out);
     }
     throw new HttpError(404, "NOT_FOUND", "없는 API");
+  }
+
+  /**
+   * 주소 → 좌표 → 반경 주변 시군구 → 시군구·월별 실거래 전 페이지 수집·대사 → 단지 좌표 조회.
+   * 결과는 사용자 화면에서 기존 자료와 병합(덮어쓰기 없음)하며, 수집 상태(complete/partial/failed)를 함께 돌려준다.
+   */
+  async function collectPublicData(body: any) {
+    const at = seoulNowIso();
+    const notes: string[] = [];
+    const address = typeof body?.address === "string" ? body.address.slice(0, 200) : "";
+    const asOf = typeof body?.asOf === "string" && /^\d{4}-\d{2}-\d{2}$/.test(body.asOf) ? body.asOf : null;
+    if (!address || !asOf) throw new HttpError(400, "INPUT", "address·asOf 필요");
+    const radiusM = Math.min(Math.max(Number(body?.radiusM) || 1500, 100), 5000);
+    const months = Math.min(Math.max(Number(body?.months) || 12, 1), cfg.molit.maxMonths);
+    const pd = deps.publicDataDeps;
+    // 1) 본건 좌표: 사용자가 이미 입력한 좌표를 우선(덮어쓰지 않음)
+    let center: { lat: number; lng: number } | null = body?.center && Number.isFinite(body.center.lat) && Number.isFinite(body.center.lng) ? { lat: body.center.lat, lng: body.center.lng } : null;
+    let geocode: { lat: number; lng: number; lawdCode?: string; source: string } | null = null;
+    if (cfg.kakaoRestKey) {
+      try { geocode = await geocodeKakao(cfg.kakaoRestKey, address, pd); notes.push(geocode ? "주소→좌표 조회됨" : "주소 검색 결과 없음"); }
+      catch (e) { notes.push(`주소 검색 실패(${e instanceof OutboundBlocked ? e.code : "오류"})`); }
+    } else notes.push("주소→좌표: 지도 키 미설정");
+    center ??= geocode ? { lat: geocode.lat, lng: geocode.lng } : null;
+    // 2) 반경 주변 시군구
+    const extra = Array.isArray(body?.extraLawdCodes) ? body.extraLawdCodes.filter((x: unknown) => typeof x === "string" && /^\d{5}$/.test(x)).slice(0, 5) : [];
+    const given = typeof body?.lawdCode === "string" && /^\d{5}$/.test(body.lawdCode) ? body.lawdCode : geocode?.lawdCode;
+    const regionMap = new Map<string, RegionInfo>();
+    let regionNote: string;
+    let regionComplete = false;
+    if (cfg.kakaoRestKey && center) {
+      const r = await regionsAround(cfg.kakaoRestKey, center, radiusM, pd);
+      r.regions.forEach((x) => regionMap.set(x.code, x));
+      regionComplete = r.failedPoints === 0;
+      regionNote = `반경 ${radiusM.toLocaleString("ko-KR")}m 안 ${r.sampled}개 지점 기준 시군구 ${r.regions.length}곳${r.failedPoints ? `(지점 ${r.failedPoints}곳 조회 실패 — 경계 밖 누락 가능)` : ""}. 지점 표본 방식이라 경계가 복잡하면 누락될 수 있음`;
+    } else {
+      regionNote = "반경 주변 시군구 확인 불가(지도 키 또는 좌표 없음) — 지정 시군구만 수집, 경계 밖 반경 내 단지 누락 가능";
+    }
+    if (given && !regionMap.has(given)) regionMap.set(given, { code: given, name1: "", name2: "" });
+    extra.forEach((c: string) => { if (!regionMap.has(c)) regionMap.set(c, { code: c, name1: "", name2: "" }); });
+    const regions = [...regionMap.values()].slice(0, 6);
+    if (regionMap.size > 6) notes.push(`시군구 ${regionMap.size}곳 중 6곳만 수집(상한) — 누락 가능`);
+    // 3) 실거래 전 페이지 수집·대사
+    const monthResults: Awaited<ReturnType<typeof fetchMolitMonth>>[] = [];
+    if (!cfg.molit.serviceKey) notes.push("실거래: 공공데이터 키 미설정");
+    else if (!regions.length) notes.push("실거래: 시군구 코드 확인 불가");
+    else for (const rg of regions) for (const ym of recentMonths(asOf, months)) monthResults.push(await fetchMolitMonth(cfg.molit, rg.code, ym, pd));
+    const trades = monthResults.flatMap((m) => m.items);
+    // 4) 단지 좌표(지번 주소) — 실패 단지는 거리 미확인으로 남김
+    const complexes: { complexKey: string; location: { lat: number; lng: number }; locationSource: string; address: string }[] = [];
+    let attempted = 0, failed = 0;
+    if (cfg.kakaoRestKey) {
+      const uniq = new Map<string, Transaction>();
+      trades.forEach((x) => { const k = complexKeyOf(x); if (!uniq.has(k)) uniq.set(k, x); });
+      for (const [k, x] of [...uniq].slice(0, 80)) {
+        attempted++;
+        try {
+          const g = await geocodeComplex(cfg.kakaoRestKey, regionMap.get(x.sggCd ?? ""), x.dong, x.jibun, pd);
+          if (g) complexes.push({ complexKey: k, location: { lat: g.lat, lng: g.lng }, locationSource: `카카오 주소검색(지번, ${at.slice(0, 10)})`, address: g.address });
+          else failed++;
+        } catch { failed++; }
+      }
+      if (uniq.size > 80) notes.push(`단지 ${uniq.size}곳 중 80곳만 좌표 조회(상한) — 나머지는 거리 미확인`);
+    }
+    const monthsOk = monthResults.length > 0 && monthResults.every((m) => m.ok);
+    const status: CollectionReport["status"] = !cfg.molit.serviceKey ? "unset" : !monthResults.length ? "failed" : monthsOk && regionComplete ? "complete" : monthResults.some((m) => m.collected > 0) ? "partial" : "failed";
+    if (status !== "complete" && cfg.molit.serviceKey) notes.push("전체 수집 완료가 아님 — 누락 가능성이 있음");
+    const report: CollectionReport = {
+      at, status, regions: regions.map((r) => ({ code: r.code, name: `${r.name1} ${r.name2}`.trim() || r.code })), regionNote,
+      months: monthResults.map(({ items, ...m }) => m), complexGeocode: { attempted, located: complexes.length, failed }, notes,
+    };
+    return { geocode, trades, complexes, report };
   }
 
   async function readJson(req: IncomingMessage): Promise<any> {

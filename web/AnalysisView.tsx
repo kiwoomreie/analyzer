@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { deleteTemp, getTemp, putTemp, type SessionInfo } from "./api.ts";
-import { draftStore, localStore } from "./store.ts";
-import { navigate, withRun } from "./nav.ts";
+import { draftStore, localStore, memoryDrafts } from "./store.ts";
+import { latestRun, navigate, withRun } from "./nav.ts";
 import { Badge, download } from "./components.tsx";
-import { hashOf } from "../shared/hash.ts";
-import { DATA_MODE_LABEL, newKey, ORIGIN_LABEL, titleFor, type AnalysisRecord, type WorkingInputs } from "../shared/model.ts";
+import { DATA_MODE_LABEL, migrateRecord, newKey, ORIGIN_LABEL, titleFor, type AnalysisRecord, type WorkingInputs } from "../shared/model.ts";
 import { makeBackup, scanWorking } from "../shared/importers.ts";
 import { seoulNowIso, seoulToday } from "../shared/dates.ts";
 import { fmtMan, fmtNum } from "../shared/units.ts";
@@ -32,13 +31,16 @@ export function AnalysisView({ storage, recKey, session }: { storage: StorageKin
   const [rec, setRecState] = useState<AnalysisRecord | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saveState, setSaveState] = useState<string>("");
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [memoryOnly, setMemoryOnly] = useState(false);
   const timer = useRef<any>(null);
 
   useEffect(() => {
-    if (storage === "server-temporary") getTemp(recKey).then((r) => setRecState(r.record)).catch((e) => setError(e.message));
+    if (storage === "server-temporary") getTemp(recKey).then((r) => setRecState(migrateRecord(r.record))).catch((e) => setError(e.message));
     else {
-      const r = storage === "browser-local" ? localStore.get(recKey) : draftStore.get(recKey);
-      r ? setRecState(r) : setError(storage === "draft" ? "저장 전 작업을 찾을 수 없음(탭을 닫으면 사라짐)" : "이 브라우저에 저장된 분석을 찾을 수 없음");
+      let r = storage === "browser-local" ? localStore.get(recKey) : draftStore.get(recKey);
+      if (!r && storage === "draft" && memoryDrafts.has(recKey)) { r = memoryDrafts.get(recKey)!; setMemoryOnly(true); }
+      r ? setRecState(r) : setError(storage === "draft" ? "저장 전 작업을 찾을 수 없음(탭을 닫았거나 새로고침으로 사라짐)" : !localStore.available() ? "이 브라우저 저장소를 사용할 수 없어 저장된 분석을 열 수 없음" : "이 브라우저에 저장된 분석을 찾을 수 없음");
     }
   }, [storage, recKey]);
 
@@ -49,8 +51,16 @@ export function AnalysisView({ storage, recKey, session }: { storage: StorageKin
         try { await putTemp(r); setSaveState("임시 분석에 반영됨"); } catch (e) { setSaveState(`반영 실패: ${(e as Error).message}`); }
         return;
       }
+      if (storage === "draft" && memoryOnly) { memoryDrafts.set(r.key, r); setSaveState("메모리에만 있음 — 새로고침하면 사라짐"); return; }
       const err = storage === "browser-local" ? localStore.put(r) : draftStore.put(r);
-      setSaveState(err ?? (storage === "browser-local" ? `이 브라우저에 저장됨 ${new Date().toLocaleTimeString("ko-KR")}` : "아직 저장 전 — ‘이 브라우저에 저장’을 누르십시오"));
+      if (err) {
+        if (storage === "draft") { memoryDrafts.set(r.key, r); setMemoryOnly(true); }
+        setSaveError(err);
+        setSaveState("저장 실패");
+        return;
+      }
+      setSaveError(null);
+      setSaveState(storage === "browser-local" ? `이 브라우저에 저장됨 ${new Date().toLocaleTimeString("ko-KR")}` : "아직 저장 전 — ‘이 브라우저에 저장’을 누르십시오");
     }, 400);
   };
   const setRec = (r: AnalysisRecord) => { setRecState(r); persist(r); };
@@ -63,17 +73,18 @@ export function AnalysisView({ storage, recKey, session }: { storage: StorageKin
     setRec({ ...rec, working: w, updatedAt: seoulNowIso(), title: titleFor(w) });
   };
 
-  const lastRun = rec?.runs[rec.runs.length - 1];
-  const stale = useMemo(() => (rec && lastRun ? hashOf(rec.working) !== lastRun.inputHash : false), [rec, lastRun]);
+  const lr = useMemo(() => (rec ? latestRun(rec) : null), [rec]);
 
   if (error) return <main className="home"><div className="banner bad" data-testid="view-error">{error}</div><button onClick={() => navigate("/app")}>첫 화면으로</button></main>;
-  if (!rec || !lastRun) return <main className="home"><p className="muted">불러오는 중…</p></main>;
-  const r = lastRun.result;
+  if (!rec || !lr?.run || !lr.result) return <main className="home"><p className="muted">불러오는 중…</p></main>;
+  const lastRun = lr.run;
+  const r = lr.result;
+  const stale = lr.stale;
 
   const saveToBrowser = () => {
     const local = { ...structuredClone(rec), key: newKey("lc"), updatedAt: seoulNowIso() };
     const err = localStore.put(local);
-    if (err) return setSaveState(err);
+    if (err) { setSaveError(err); setSaveState("저장 실패"); return; }
     if (storage === "draft") draftStore.remove(rec.key);
     navigate(`/app/l/${local.key}`);
   };
@@ -111,6 +122,9 @@ export function AnalysisView({ storage, recKey, session }: { storage: StorageKin
         </div>
       </div>
 
+      {saveError && <div className="banner bad" data-testid="save-error"><b>저장되지 않았습니다.</b> {saveError} <button onClick={() => download(`apartment-analysis-${seoulToday()}.json`, JSON.stringify(makeBackup([rec], seoulNowIso()), null, 1), "application/json")}>지금 JSON으로 내보내기</button></div>}
+      {memoryOnly && <div className="banner warn small" data-testid="memory-only">탭 저장소를 쓸 수 없어 이 분석은 메모리에만 있습니다. 새로고침하거나 탭을 닫으면 사라지니 JSON으로 내보내십시오.</div>}
+      {stale && <div className="banner bad" data-testid="stale-banner"><b>이전 결과 · 재분석 필요</b> — 아래 결과와 보고서는 #{lastRun.runNo} 실행({lastRun.at}) 당시 입력 기준입니다. 이후 입력이 바뀌었으니 ‘분석 다시 실행’을 누르십시오.</div>}
       {r.missing.length > 0 && (
         <div className="banner warn small" data-testid="missing">
           <b>추가하면 더 분석되는 항목</b> <span className="muted">(없어도 가능한 분석은 표시됨)</span>
@@ -120,13 +134,13 @@ export function AnalysisView({ storage, recKey, session }: { storage: StorageKin
 
       <div className="summary" data-testid="summary">
         <div className="card sblock" data-testid="summary-location">
-          <h2>① 입지 변화</h2>
+          <h2>① 입지 변화 {stale && <Badge tone="bad">이전 결과</Badge>}</h2>
           {!r.summary.location.length ? <p className="muted">입력된 입지 사건 없음 — 아래 ‘입지 사건·근거 상세’에서 추가</p> : (
             <ul>{r.summary.location.map((l) => <li key={l.key}><b>{l.text}</b>{l.detail && <div className="muted small">{l.detail}</div>}</li>)}</ul>
           )}
         </div>
         <div className="card sblock" data-testid="summary-price">
-          <h2>② 가격 영향과 근거</h2>
+          <h2>② 가격 영향과 근거 {stale && <Badge tone="bad">이전 결과</Badge>}</h2>
           <dl className="kv">
             <dt>검토가격 비교</dt><dd data-testid="price-compare">{r.price.status === "held" ? <><Badge tone="muted">보류</Badge> {r.price.text.replace(/^가격 판단 보류 — /, "")}</> : r.price.text}</dd>
             <dt>비교 근거</dt><dd>{r.summary.price.comparables}</dd>
@@ -137,7 +151,7 @@ export function AnalysisView({ storage, recKey, session }: { storage: StorageKin
           <p className="muted small">{r.summary.price.basis}</p>
         </div>
         <div className="card sblock" data-testid="summary-uncertainty">
-          <h2>③ 주요 불확실성</h2>
+          <h2>③ 주요 불확실성 {stale && <Badge tone="bad">이전 결과</Badge>}</h2>
           {!r.summary.uncertainties.length ? <p className="muted">자료 범위 내 주요 항목 없음</p> : (
             <ul>{r.summary.uncertainties.map((f, i) => <li key={i}><Badge tone={f.level === "high" ? "bad" : "warn"}>{f.level === "high" ? "높음" : "중간"}</Badge> {f.text}</li>)}</ul>
           )}
@@ -145,15 +159,15 @@ export function AnalysisView({ storage, recKey, session }: { storage: StorageKin
       </div>
 
       <div className="card" data-testid="comparables">
-        <h2>대표 비교단지 <span className="muted small">최대 5개 · 비교하기 어려운 단지는 채우지 않음 · 최근 {r.market.recentWindow.months}개월({r.market.recentWindow.start}~{r.market.recentWindow.end}){r.market.areaFilter ? ` · 전용 ${fmtNum(r.market.areaFilter.minM2, 1)}~${fmtNum(r.market.areaFilter.maxM2, 1)}㎡` : " · 면적 필터 없음"}</span></h2>
-        {!r.market.comparables.length ? <p className="muted" data-testid="no-comparables">비교 가능한 단지 없음{rec.working.transactions.length ? " — 제외 사유는 ‘실거래·비교단지 상세’에서 확인" : " — 실거래 자료 없음"}</p> : (
+        <h2>대표 비교단지 {stale && <Badge tone="bad">이전 결과</Badge>} <span className="muted small">최대 5개 · 비교하기 어려운 단지는 채우지 않음 · 최근 {r.market.recentWindow.months}개월({r.market.recentWindow.start}~{r.market.recentWindow.end}){r.market.areaFilter ? ` · 전용 ${fmtNum(r.market.areaFilter.minM2, 1)}~${fmtNum(r.market.areaFilter.maxM2, 1)}㎡` : " · 면적 필터 없음"}</span></h2>
+        {!r.market.comparables.length ? <p className="muted" data-testid="no-comparables">반경 내 거리가 확인된 비교 가능 단지 없음{lr.input.transactions.length ? " — 제외·확인 필요 사유는 ‘실거래·비교단지 상세’에서 확인" : " — 실거래 자료 없음"}</p> : (
           <table className="tbl">
             <thead><tr><th>단지</th><th>준공연도(본건 대비)</th><th>거리</th><th>최근 거래</th><th>거래 전용면적</th><th>중위 단가(만원/전용㎡)</th><th>최근 계약</th><th>선정 이유</th><th>자료</th></tr></thead>
             <tbody>{r.market.comparables.map((c) => (
               <tr key={c.complexKey}>
                 <td><b>{c.name}</b>{c.dong ? <div className="muted small">{c.dong}</div> : null}</td>
                 <td>{c.buildYear ?? "미확인"}{c.differences.buildYearDiff !== null ? ` (${c.differences.buildYearDiff > 0 ? "+" : ""}${c.differences.buildYearDiff}년)` : ""}</td>
-                <td>{c.distanceM === null ? <span className="warn-text">미확인</span> : `${Math.round(c.distanceM).toLocaleString("ko-KR")}m`}</td>
+                <td>{`${Math.round(c.distanceM!).toLocaleString("ko-KR")}m`}</td>
                 <td>{c.recentTrades}건</td>
                 <td>{c.recentAreaMin ? `${fmtNum(c.recentAreaMin, 2)}~${fmtNum(c.recentAreaMax, 2)}㎡` : "-"}</td>
                 <td>{fmtMan(c.stats.medianPerM2).replace("만원", "")}</td>
@@ -164,6 +178,8 @@ export function AnalysisView({ storage, recKey, session }: { storage: StorageKin
             ))}</tbody>
           </table>
         )}
+        {r.market.needsCheck.length > 0 && <p className="small warn-text" data-testid="needs-check">거리 미확인 확인 필요 후보 {r.market.needsCheck.length}곳(대표 통계 제외): {r.market.needsCheck.slice(0, 8).map((c) => c.name).join(", ")}{r.market.needsCheck.length > 8 ? " 외" : ""}</p>}
+        {r.collection && <p className="small muted">{r.collection.text}</p>}
         {r.price.reviewPerM2 !== null && <p className="small">본건 검토가격: {fmtMan(r.price.reviewPerM2)}/전용㎡ ({r.price.basisDate === "기준일 미입력" ? "가격 기준일 미입력" : `가격 기준일 ${r.price.basisDate}`})</p>}
       </div>
 

@@ -97,13 +97,16 @@ function tag(item: string, name: string): string | undefined {
 }
 
 /** XML 응답에서 필요한 필드만 텍스트로 읽는다(실행·외부 참조 없음). 금액 단위는 만원. */
-export function parseMolitAptTrades(xml: string, source = "국토교통부 아파트 매매 실거래가 API"): { items: Transaction[]; resultCode?: string; resultMsg?: string } {
+export function parseMolitAptTrades(xml: string, source = "국토교통부 아파트 매매 실거래가 API"): { items: Transaction[]; resultCode?: string; resultMsg?: string; totalCount: number | null; numOfRows: number | null; pageNo: number | null; rawItemCount: number } {
   const resultCode = tag(xml, "resultCode");
   const resultMsg = tag(xml, "resultMsg");
+  const num = (v?: string) => (v !== undefined && /^\d+$/.test(v) ? Number(v) : null);
   const items: Transaction[] = [];
   const re = /<item>([\s\S]*?)<\/item>/g;
   let m: RegExpExecArray | null;
-  while ((m = re.exec(xml)) && items.length < 5000) {
+  let rawItemCount = 0;
+  while ((m = re.exec(xml)) && rawItemCount < 20000) {
+    rawItemCount++;
     const it = m[1];
     const amountMan = Number((tag(it, "dealAmount") ?? "").replace(/[,\s]/g, ""));
     const area = Number(tag(it, "excluUseAr"));
@@ -112,41 +115,63 @@ export function parseMolitAptTrades(xml: string, source = "국토교통부 아�
     const contractDate = `${y}-${mo.padStart(2, "0")}${d ? `-${d.padStart(2, "0")}` : ""}`;
     const cdeal = (tag(it, "cdealType") ?? "").trim();
     items.push({
-      key: newKey("tx"), complexName: (tag(it, "aptNm") ?? "단지명 미상").slice(0, 80), dong: tag(it, "umdNm")?.slice(0, 40), exclusiveAreaM2: area,
-      floor: Number(tag(it, "floor")) || undefined, priceKrw: Math.round(amountMan * 1e4), contractDate,
+      key: newKey("tx"), complexName: (tag(it, "aptNm") ?? "단지명 미상").slice(0, 80),
+      complexId: tag(it, "aptSeq")?.slice(0, 40) || undefined, sggCd: tag(it, "sggCd")?.slice(0, 5) || undefined,
+      dong: tag(it, "umdNm")?.slice(0, 40) || undefined, jibun: tag(it, "jibun")?.slice(0, 40) || undefined, aptDong: tag(it, "aptDong")?.slice(0, 20) || undefined,
+      exclusiveAreaM2: area, floor: Number(tag(it, "floor")) || undefined, priceKrw: Math.round(amountMan * 1e4), contractDate,
       cancelled: cdeal !== "", cancelDate: tag(it, "cdealDay") || undefined,
       buildYear: Number(tag(it, "buildYear")) || undefined, dataMode: "official-api", source,
     });
   }
-  return { items, resultCode, resultMsg };
+  return { items, resultCode, resultMsg, totalCount: num(tag(xml, "totalCount")), numOfRows: num(tag(xml, "numOfRows")), pageNo: num(tag(xml, "pageNo")), rawItemCount };
 }
 
-export interface MolitConfig { serviceKey: string | null; endpoint: string; maxMonths: number }
+export interface MolitConfig { serviceKey: string | null; endpoint: string; maxMonths: number; maxPages?: number }
 
-export async function fetchMolitAptTrades(cfg: MolitConfig, lawdCode: string, yearMonths: string[], deps: SafeFetchDeps = {}) {
-  if (!cfg.serviceKey) return { status: "unset" as const, items: [], errors: ["MOLIT_SERVICE_KEY 미설정"] };
-  if (!/^\d{5}$/.test(lawdCode)) return { status: "error" as const, items: [], errors: ["시군구 코드는 5자리"] };
-  const months = yearMonths.filter((ym) => /^\d{6}$/.test(ym)).slice(0, cfg.maxMonths);
-  const items: Transaction[] = [];
-  const errors: string[] = [];
-  for (const ym of months) {
+export interface MonthCollection { lawdCode: string; yearMonth: string; totalCount: number | null; collected: number; pagesExpected: number | null; pagesFetched: number; ok: boolean; error?: string; items: Transaction[] }
+
+/** 한 시군구·한 달의 모든 페이지를 수집하고 전체 건수(totalCount)와 대사한다. 실패·불일치는 ok=false. */
+export async function fetchMolitMonth(cfg: MolitConfig, lawdCode: string, ym: string, deps: SafeFetchDeps = {}, rows = 1000): Promise<MonthCollection> {
+  const out: MonthCollection = { lawdCode, yearMonth: ym, totalCount: null, collected: 0, pagesExpected: null, pagesFetched: 0, ok: false, items: [] };
+  const maxPages = cfg.maxPages ?? 20;
+  const source = `국토교통부 아파트 매매 실거래가 API(${new Date().toISOString().slice(0, 10)} 조회)`;
+  for (let page = 1; page <= (out.pagesExpected ?? 1); page++) {
+    if (page > maxPages) { out.error = `페이지 상한(${maxPages}) 초과 — 일부 미수집`; break; }
     const u = new URL(cfg.endpoint);
-    u.searchParams.set("serviceKey", cfg.serviceKey);
+    u.searchParams.set("serviceKey", cfg.serviceKey!);
     u.searchParams.set("LAWD_CD", lawdCode);
     u.searchParams.set("DEAL_YMD", ym);
-    u.searchParams.set("numOfRows", "1000");
-    u.searchParams.set("pageNo", "1");
+    u.searchParams.set("numOfRows", String(rows));
+    u.searchParams.set("pageNo", String(page));
     try {
       const r = await safeGet(u.toString(), {}, deps);
-      if (r.status !== 200) { errors.push(`${ym}: 응답 ${r.status}`); continue; }
-      const p = parseMolitAptTrades(r.body.toString("utf8"), `국토교통부 아파트 매매 실거래가 API(${new Date().toISOString().slice(0, 10)} 조회)`);
-      if (p.resultCode && !/^0+$/.test(p.resultCode)) { errors.push(`${ym}: 결과코드 ${p.resultCode}`); continue; }
-      items.push(...p.items);
+      if (r.status !== 200) { out.error = `${page}쪽 응답 ${r.status}`; break; }
+      const p = parseMolitAptTrades(r.body.toString("utf8"), source);
+      if (p.resultCode && !/^0+$/.test(p.resultCode)) { out.error = `${page}쪽 결과코드 ${p.resultCode}`; break; }
+      if (p.totalCount === null) { out.error = "전체 건수(totalCount) 없음 — 대사 불가"; out.items.push(...p.items); out.pagesFetched++; break; }
+      out.totalCount = p.totalCount;
+      out.pagesExpected = Math.max(1, Math.ceil(p.totalCount / rows));
+      out.items.push(...p.items);
+      out.collected += p.rawItemCount;
+      out.pagesFetched++;
     } catch (e) {
-      errors.push(`${ym}: ${e instanceof OutboundBlocked ? e.code : "호출 실패"}`);
+      out.error = `${page}쪽 ${e instanceof OutboundBlocked ? e.code : "호출 실패"}`;
+      break;
     }
   }
-  return { status: errors.length && !items.length ? ("error" as const) : ("ok" as const), items, errors, requestedMonths: months };
+  out.ok = !out.error && out.totalCount !== null && out.collected === out.totalCount && out.pagesFetched === out.pagesExpected;
+  if (!out.error && out.totalCount !== null && out.collected !== out.totalCount) out.error = `건수 불일치(전체 ${out.totalCount}, 수집 ${out.collected})`;
+  return out;
+}
+
+/** (이전 호환) 여러 달 수집 */
+export async function fetchMolitAptTrades(cfg: MolitConfig, lawdCode: string, yearMonths: string[], deps: SafeFetchDeps = {}) {
+  if (!cfg.serviceKey) return { status: "unset" as const, items: [] as Transaction[], errors: ["MOLIT_SERVICE_KEY 미설정"], months: [] as MonthCollection[] };
+  if (!/^\d{5}$/.test(lawdCode)) return { status: "error" as const, items: [] as Transaction[], errors: ["시군구 코드는 5자리"], months: [] as MonthCollection[] };
+  const months: MonthCollection[] = [];
+  for (const ym of yearMonths.filter((x) => /^\d{6}$/.test(x)).slice(0, cfg.maxMonths)) months.push(await fetchMolitMonth(cfg, lawdCode, ym, deps));
+  const errors = months.filter((m) => !m.ok).map((m) => `${m.lawdCode}/${m.yearMonth}: ${m.error ?? "미완료"}`);
+  return { status: errors.length ? ("partial" as const) : ("ok" as const), items: months.flatMap((m) => m.items), errors, months };
 }
 
 // ── 카카오 로컬 주소 검색(주소→좌표·법정동코드). 실제 호출 미검증.
@@ -170,4 +195,47 @@ export async function geocodeKakao(restKey: string | null, address: string, deps
   const r = await safeGet(u.toString(), { headers: { Authorization: `KakaoAK ${restKey}` } }, deps);
   if (r.status !== 200) throw new OutboundBlocked("STATUS", `주소 검색 응답 ${r.status}`);
   return parseKakaoAddress(r.body.toString("utf8"));
+}
+
+// ── 반경 주변 시군구 확인(행정구역 경계 밖 단지 누락 방지)
+/** 중심과 반경 위 16개 지점(반경·반경의 1/2, 8방위)의 시군구를 조회. 경계가 복잡하면 누락 가능(샘플 지점 기반). */
+export function samplePoints(center: { lat: number; lng: number }, radiusM: number): { lat: number; lng: number }[] {
+  const pts = [center];
+  for (const f of [1, 0.5]) for (let k = 0; k < 8; k++) {
+    const ang = (k * Math.PI) / 4;
+    const dLat = (radiusM * f * Math.cos(ang)) / 111_320;
+    const dLng = (radiusM * f * Math.sin(ang)) / (111_320 * Math.cos((center.lat * Math.PI) / 180));
+    pts.push({ lat: center.lat + dLat, lng: center.lng + dLng });
+  }
+  return pts;
+}
+
+export interface RegionInfo { code: string; name1: string; name2: string }
+
+export async function regionsAround(restKey: string, center: { lat: number; lng: number }, radiusM: number, deps: SafeFetchDeps = {}): Promise<{ regions: RegionInfo[]; failedPoints: number; sampled: number }> {
+  const pts = samplePoints(center, radiusM);
+  const map = new Map<string, RegionInfo>();
+  let failed = 0;
+  for (const p of pts) {
+    const u = new URL("https://dapi.kakao.com/v2/local/geo/coord2regioncode.json");
+    u.searchParams.set("x", String(p.lng));
+    u.searchParams.set("y", String(p.lat));
+    try {
+      const r = await safeGet(u.toString(), { headers: { Authorization: `KakaoAK ${restKey}` } }, deps);
+      const d = JSON.parse(r.body.toString("utf8"));
+      const b = (d?.documents ?? []).find((x: any) => x.region_type === "B") ?? d?.documents?.[0];
+      const code = String(b?.code ?? "");
+      if (r.status !== 200 || !/^\d{10}$/.test(code)) { failed++; continue; }
+      map.set(code.slice(0, 5), { code: code.slice(0, 5), name1: String(b.region_1depth_name ?? ""), name2: String(b.region_2depth_name ?? "") });
+    } catch { failed++; }
+  }
+  return { regions: [...map.values()], failedPoints: failed, sampled: pts.length };
+}
+
+/** 단지 지번 주소로 좌표 조회(카카오 주소검색). 실패하면 null — 거리 미확인으로 남긴다. */
+export async function geocodeComplex(restKey: string, region: RegionInfo | undefined, dong?: string, jibun?: string, deps: SafeFetchDeps = {}): Promise<{ lat: number; lng: number; address: string } | null> {
+  if (!region || !dong || !jibun) return null;
+  const address = `${region.name1} ${region.name2} ${dong} ${jibun}`.trim();
+  const g = await geocodeKakao(restKey, address, deps);
+  return g ? { lat: g.lat, lng: g.lng, address } : null;
 }

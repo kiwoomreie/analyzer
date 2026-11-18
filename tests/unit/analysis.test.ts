@@ -117,8 +117,9 @@ test("분석 기준일 이후 계약·발표 정보는 사용하지 않음", () 
   const r = runAnalysis(w);
   assert.equal(r.market.pooled.count, 0);
   assert.ok(r.market.txRows.every((x) => x.reasons.includes("분석 기준일 이후 계약")));
-  assert.equal(r.events[0].excludedAfterAsOf, 1);
-  assert.equal(r.events[0].expectedTarget, null);
+  // 사건이 기준일 이후에 처음 알려졌으므로 사건 전체를 분석에서 제외
+  assert.equal(r.events.length, 0);
+  assert.equal(r.excludedEvents[0].firstKnown, "2026-08-01");
 });
 
 test("예정일은 본건 분양·준공을 입력한 경우에만 비교", () => {

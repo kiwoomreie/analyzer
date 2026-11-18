@@ -16,7 +16,7 @@ export type DataMode = "demo" | "user" | "official-api" | "committee-copy";
 
 export const DATA_MODE_LABEL: Record<DataMode, string> = {
   demo: "가상 자료",
-  user: "사용자 제공",
+  user: "사용자 입력",
   "official-api": "공식 API",
   "committee-copy": "협의체 사본",
 };
@@ -104,23 +104,48 @@ export interface LocationEvent {
 }
 
 export type EvidenceStatus = "confirmed" | "needsApplicability" | "inconsistent" | "hardToVerify";
+/** 근거 내용 판단(사용자가 기록). ‘공식 확인’을 뜻하지 않는다. */
 export const EVIDENCE_STATUS_LABEL: Record<EvidenceStatus, string> = {
-  confirmed: "확인된 사실",
+  confirmed: "사실로 기록(사용자 판단)",
   needsApplicability: "본건 적용 추가 검토",
   inconsistent: "자료 간 불일치",
   hardToVerify: "확인 어려움",
+};
+
+/** 출처 종류: 공공기관 원문(고시·공고·인허가 등) / 보도자료·언론 / 분양광고 / 기타 */
+export type EvidenceSourceType = "official" | "press" | "marketing" | "other";
+export const EVIDENCE_SOURCE_LABEL: Record<EvidenceSourceType, string> = { official: "공공기관 원문", press: "보도자료·언론", marketing: "분양·홍보물", other: "기타" };
+
+/**
+ * 근거 기록 수준(앱이 자동 검증한 것이 아님).
+ * - userInput: 사용자 입력 — 출처·발행일 미기재
+ * - sourceCited: 출처 기재 — 발행기관·문서명·발행일은 있으나 공식 원문 대조 기록 없음
+ * - originalChecked: 공식 원문 대조 기록 — 공공기관 원문이며 문서번호 또는 첨부, 페이지·절, 발행일과 ‘원문 직접 대조’ 표시를 사용자가 기록
+ * 입지 뉴스·고시의 자동 수집·자동 검증 기능은 없다.
+ */
+export type EvidenceLevel = "userInput" | "sourceCited" | "originalChecked";
+export const EVIDENCE_LEVEL_LABEL: Record<EvidenceLevel, string> = {
+  userInput: "사용자 입력(출처 미기재)",
+  sourceCited: "출처 기재(원문 대조 기록 없음)",
+  originalChecked: "공식 원문 대조 기록(사용자 기록, 자동 검증 아님)",
 };
 
 export interface Evidence {
   key: string;
   publisher: string;
   title: string;
+  sourceType?: EvidenceSourceType;
+  /** 사용자가 공식 원문을 직접 대조했다고 기록함 */
+  originalReviewed?: boolean;
   sourceRef?: string;
   /** 참고 주소 — 텍스트로만 보관하며 앱이 조회·실행하지 않음 */
   sourceUrl?: string;
   attachmentKey?: string;
+  /** 발행일 */
   publishedOn?: string;
+  /** 자료 기준일·적용일 */
   effectiveOn?: string;
+  /** 사용자가 확인한 날 */
   checkedOn?: string;
   pageOrSection?: string;
   fact: string;
@@ -132,8 +157,22 @@ export interface Evidence {
 export interface Transaction {
   key: string;
   complexName: string;
+  /** 공식 단지 식별자(국토부 aptSeq 등). 있으면 단지 구분에 우선 사용 */
+  complexId?: string;
+  /** 시군구 코드(5자리) */
+  sggCd?: string;
   /** 법정동(단지 구분 보조) */
   dong?: string;
+  jibun?: string;
+  /** 동(등기 완료 건만 공개) */
+  aptDong?: string;
+  /** 원천 거래 식별자(있을 때만). 국토부 아파트 매매 API에는 거래 단위 공식 식별자가 없음 */
+  officialId?: string;
+  /** 중복 판별 키(tradeMerge.ts) */
+  idKey?: string;
+  idBasis?: "official" | "composite";
+  /** 정정·취소 대사 이력 */
+  revisions?: { at: string; source: string; change: string }[];
   exclusiveAreaM2: number;
   floor?: number;
   priceKrw: number;
@@ -150,13 +189,17 @@ export interface Transaction {
 
 /** 단지별 보완 정보(거리·준공연도·좌표 등). 거래 자료에 없는 정보를 사용자가 확인해 입력 */
 export interface ComplexInfo {
-  /** complexKey = 단지명|법정동 */
+  /** complexKey: 공식 단지 식별자 또는 단지명·시군구·법정동·지번 조합(complexKeyOf) */
   complexKey: string;
+  /** 사용자가 확인해 입력한 거리(m) */
   distanceM?: number;
   distanceSource?: string;
   buildYear?: number;
   households?: number;
+  /** 좌표(자동 조회 또는 사용자 입력) */
   location?: { lat: number; lng: number };
+  locationSource?: string;
+  address?: string;
   /** 사용자가 비교단지에서 제외/포함 지정 */
   userDecision?: "exclude" | "include";
   userReason?: string;
@@ -207,8 +250,34 @@ export interface WorkingInputs {
   transactions: Transaction[];
   complexInfo: ComplexInfo[];
   attachments: AttachmentMeta[];
-  /** 자동 조회 기록(어떤 자료를 언제 어디서) */
+  /** 자동 조회·가져오기 기록(어떤 자료를 언제 어디서) */
   dataLog: { at: string; source: string; detail: string }[];
+  /** 공공 API 수집 대사 결과(최근 것부터) */
+  collections?: CollectionReport[];
+}
+
+export interface CollectionReport {
+  at: string;
+  /** complete=모든 대상 월·시군구·페이지 수집 및 건수 대사 일치 */
+  status: "complete" | "partial" | "failed" | "unset";
+  regions: { code: string; name: string }[];
+  regionNote: string;
+  months: { lawdCode: string; yearMonth: string; totalCount: number | null; collected: number; pagesExpected: number | null; pagesFetched: number; ok: boolean; error?: string }[];
+  complexGeocode: { attempted: number; located: number; failed: number };
+  merge?: MergeReport;
+  notes: string[];
+}
+
+export interface MergeReport {
+  received: number;
+  added: number;
+  duplicates: number;
+  corrected: number;
+  cancellationsApplied: number;
+  addedCancelled: number;
+  ambiguous: number;
+  sameKeyGroups: number;
+  notes: string[];
 }
 
 export type OriginKind = "manual" | "demo" | "backup-restore" | "launch" | "committee-import";
@@ -225,6 +294,8 @@ export interface RunRecord {
   at: string;
   trigger: "auto-launch" | "manual" | "auto-create";
   inputHash: string;
+  /** 실행 당시 입력 스냅샷. 결과·보고서는 이 스냅샷 기준으로 표시(최근 실행에만 보관) */
+  input?: WorkingInputs;
   result: import("./analysis.ts").AnalysisResult;
 }
 
@@ -281,10 +352,37 @@ export function emptyWorking(address: string, asOf = seoulToday()): WorkingInput
     complexInfo: [],
     attachments: [],
     dataLog: [],
+    collections: [],
   };
 }
 
-export const complexKeyOf = (t: { complexName: string; dong?: string }) => `${t.complexName.trim()}|${(t.dong ?? "").trim()}`;
+/**
+ * 단지 식별 키. 공식 단지 식별자가 있으면 우선 사용하고, 없으면 단지명·시군구·법정동·지번 조합을 사용한다.
+ * 같은 이름이라도 시군구·법정동·지번이 다르면 다른 단지로 본다.
+ */
+export const complexKeyOf = (t: { complexName: string; complexId?: string; sggCd?: string; dong?: string; jibun?: string }) =>
+  t.complexId ? `S:${t.complexId.trim()}` : `N:${t.complexName.trim()}|${(t.sggCd ?? "").trim()}|${(t.dong ?? "").trim()}|${(t.jibun ?? "").trim()}`;
+
+/** 이전 버전 저장분 변환(기존 입력 보존): 옛 단지 키 "단지명|법정동" → 새 키 형식 */
+export function migrateWorking(w: WorkingInputs): WorkingInputs {
+  for (const c of w.complexInfo ?? []) {
+    if (!/^[SN]:/.test(c.complexKey)) {
+      const [name, dong = ""] = c.complexKey.split("|");
+      c.complexKey = `N:${name}||${dong}|`;
+    }
+  }
+  w.collections ??= [];
+  w.dataLog ??= [];
+  return w;
+}
+
+export function migrateRecord(r: AnalysisRecord): AnalysisRecord {
+  migrateWorking(r.working);
+  migrateWorking(r.original.working);
+  r.versions?.forEach((v) => migrateWorking(v.working));
+  r.runs?.forEach((x) => x.input && migrateWorking(x.input));
+  return r;
+}
 
 export function titleFor(w: WorkingInputs): string {
   return w.property.displayName || w.property.address || "주소 미입력";

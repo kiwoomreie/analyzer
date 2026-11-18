@@ -3,8 +3,8 @@
 import { addMonths, compareMonth, formatDateValue, isBefore, monthDiff, parseDateValue, type DateParts } from "./dates.ts";
 import { hashOf } from "./hash.ts";
 import {
-  complexKeyOf, DATA_MODE_LABEL, ENGINE_VERSION, EVENT_CATEGORY_LABEL, MILESTONE_LABEL, SUPPLY_STAGE_LABEL,
-  type DataMode, type EvidenceStatus, type LocationEvent, type Milestone, type Transaction, type WorkingInputs,
+  complexKeyOf, DATA_MODE_LABEL, ENGINE_VERSION, EVENT_CATEGORY_LABEL, EVIDENCE_LEVEL_LABEL, MILESTONE_LABEL, SUPPLY_STAGE_LABEL,
+  type DataMode, type Evidence, type EvidenceLevel, type EvidenceStatus, type LocationEvent, type Milestone, type Transaction, type WorkingInputs,
 } from "./model.ts";
 import { deriveUnitPrices, fmtMan, fmtPct, m2ToPyeong, safeDivide, toKrw } from "./units.ts";
 import { LABELS } from "./contract.ts";
@@ -26,7 +26,8 @@ export interface EventResult {
   excludedAfterAsOf: number; undatedKnowledge: number;
   scheduleGaps: { against: "saleStart" | "completion"; label: string; months: number; text: string }[];
   access: { straightDistanceM: number | null; walkMinutes: number | null; text: string };
-  evidence: { total: number; byStatus: Record<EvidenceStatus, number>; confirmedOfficial: boolean };
+  /** 근거 기록 수준별 건수. originalChecked도 사용자 기록이며 앱의 자동 검증이 아님 */
+  evidence: { total: number; byStatus: Record<EvidenceStatus, number>; levels: Record<EvidenceLevel, number>; originalChecked: boolean; afterAsOf: number; text: string };
   prepricing: { text: string; assessment: "possible" | "unclear" | "notApplicable"; shareAfter: number | null; quantification: "정량 분리 어려움" } | null;
 }
 
@@ -36,9 +37,14 @@ export interface ComplexResult {
   distanceM: number | null; distanceSource: string;
   recentTrades: number; recentAreaMin: number | null; recentAreaMax: number | null;
   stats: Stats; latestTrade: string | null;
-  status: "selected" | "eligible" | "excluded";
+  /** selected=대표(반경 내·거리 확인), eligible=반경 내 후보(순위 밖), needsCheck=거리 미확인 후보(통계 제외), excluded=제외 */
+  status: "selected" | "eligible" | "needsCheck" | "excluded";
   reasons: string[];
   selectionReason: string;
+  identityBasis: string;
+  sameNameCount: number;
+  address?: string;
+  samples: { total: number; cancelled: number; inWindow: number; areaMatched: number };
   differences: { buildYearDiff: number | null; distanceM: number | null; areaDiffM2: number | null };
   dataModes: DataMode[];
   sources: string[];
@@ -49,6 +55,7 @@ export interface MarketResult {
   areaFilter: { minM2: number; maxM2: number } | null;
   complexes: ComplexResult[];
   comparables: ComplexResult[];
+  needsCheck: ComplexResult[];
   pooled: Stats;
   excludedTrades: Record<string, number>;
   validTrades: number;
@@ -83,6 +90,8 @@ export interface ObservedChange {
 export interface SupplyResult {
   key: string; name: string; stage: string; households: number | null; dataMode: DataMode;
   timing: "yes" | "no" | "unknown"; area: "yes" | "no" | "unknown"; notes: string[];
+  /** 기준일 이전에 취소가 알려진 공급(물량 집계 제외) */
+  cancelledAsOf: boolean;
 }
 
 export interface AnalysisResult {
@@ -94,6 +103,9 @@ export interface AnalysisResult {
   price: PriceComparison;
   observed: ObservedChange;
   supply: { rows: SupplyResult[]; window: string; overlappingHouseholds: number; text: string };
+  /** 기준일 이후에 처음 알려진 사건(분석 제외) */
+  excludedEvents: { key: string; name: string; firstKnown: string }[];
+  collection: { status: string; text: string } | null;
   causalEffect: { status: "notEstimated"; text: string };
   flags: Flag[];
   summary: {
@@ -156,6 +168,27 @@ function mode<T>(arr: T[]): T | null {
   return best;
 }
 
+/** 근거 기록 수준(사용자 기록 기준). 자동 검증이 아님. */
+export function evidenceLevel(e: Evidence): EvidenceLevel {
+  const cited = !!(e.publisher?.trim() && e.title?.trim() && e.publishedOn);
+  if (cited && e.sourceType === "official" && e.originalReviewed === true && (e.sourceRef?.trim() || e.attachmentKey) && e.pageOrSection?.trim()) return "originalChecked";
+  return cited ? "sourceCited" : "userInput";
+}
+
+function laterThan(dateRaw: string | undefined, asOf: DateParts): boolean {
+  const d = parseDateValue(dateRaw ?? null);
+  return !!d && isBefore(asOf, d) === true;
+}
+
+/** 사건이 처음 알려진 날(일정의 발표일·수집일, 연결 근거의 발행일 중 가장 이른 날) */
+export function firstKnownOf(ev: LocationEvent, evidence: Evidence[]): DateParts | null {
+  const ds = [
+    ...ev.milestones.map((m) => parseDateValue(m.announcedOn ?? m.collectedOn ?? null)),
+    ...evidence.filter((e) => ev.evidenceKeys.includes(e.key)).map((e) => parseDateValue(e.publishedOn ?? null)),
+  ].filter(Boolean) as DateParts[];
+  return ds.sort((a, b) => sortKey(a) - sortKey(b))[0] ?? null;
+}
+
 // ───────────── main
 export function runAnalysis(w: WorkingInputs): AnalysisResult {
   const asOf = parseDateValue(w.asOf)!;
@@ -172,7 +205,14 @@ export function runAnalysis(w: WorkingInputs): AnalysisResult {
   if (!w.events.length) missing.push({ field: "events", label: "입지 사건", affects: "입지 변화 정리" });
 
   const evByKey = new Map(w.evidence.map((e) => [e.key, e]));
-  const events: EventResult[] = w.events.map((ev) => analyzeEvent(ev, w, asOf, coords, evByKey, flags));
+  const excludedEvents: AnalysisResult["excludedEvents"] = [];
+  const activeEvents = w.events.filter((ev) => {
+    const fk = firstKnownOf(ev, w.evidence);
+    if (fk && isBefore(asOf, fk) === true) { excludedEvents.push({ key: ev.key, name: ev.name, firstKnown: fk.raw }); return false; }
+    return true;
+  });
+  if (excludedEvents.length) flags.push({ level: "low", area: "data", text: `분석 기준일 이후 처음 알려진 사건 ${excludedEvents.length}건은 분석에서 제외: ${excludedEvents.map((e) => e.name).join(", ")}` });
+  const events: EventResult[] = activeEvents.map((ev) => analyzeEvent(ev, w, asOf, coords, evByKey, flags));
   const market = analyzeMarket(w, asOf, area, coords, flags);
   const price = comparePrice(w, area, market, flags);
   const observed = observeChange(w, asOf, events, market, flags);
@@ -199,7 +239,11 @@ export function runAnalysis(w: WorkingInputs): AnalysisResult {
     };
   }
 
-  const supply = analyzeSupply(w, asOf, area, flags);
+  const supply = analyzeSupply(w, activeEvents, events, asOf, area, flags);
+  const lastCol = (w.collections ?? [])[0];
+  if (lastCol && lastCol.status !== "complete" && lastCol.status !== "unset") flags.push({ level: "high", area: "data", text: `최근 공공 실거래 수집이 완료되지 않음(${lastCol.status === "partial" ? "일부 수집" : "실패"}) — 거래 누락 가능` });
+  if (lastCol && lastCol.regionNote.includes("누락 가능")) flags.push({ level: "medium", area: "data", text: `수집 범위: ${lastCol.regionNote}` });
+  if (w.events.length && w.events.every((e) => e.dataMode !== "official-api")) flags.push({ level: "low", area: "location", text: "입지 사건은 모두 사용자 입력임(입지 뉴스·고시 자동 수집 기능 없음)" });
   if (w.transactions.some((t) => t.dataMode === "demo") || w.events.some((e) => e.dataMode === "demo")) flags.push({ level: "high", area: "data", text: "가상 자료가 포함됨 — 실제 판단에 사용 불가" });
 
   const order: Record<Level, number> = { high: 0, medium: 1, low: 2 };
@@ -209,7 +253,7 @@ export function runAnalysis(w: WorkingInputs): AnalysisResult {
     key: e.key,
     text: `[${e.categoryLabel}] ${e.name} — ${e.stageAsOf}${e.expectedTarget ? `, ${e.expectedTargetStatus === "actual" ? "완료" : "예정"} ${formatDateValue(e.expectedTarget)}` : ""}`,
     detail: [
-      e.evidence.confirmedOfficial ? `공식 확인 ${e.evidence.byStatus.confirmed}건` : "공식 자료 미확인",
+      e.evidence.text,
       e.delayCount ? `지연 ${e.delayCount}회` : null,
       ...e.scheduleGaps.map((g) => g.text),
       e.access.text,
@@ -220,7 +264,7 @@ export function runAnalysis(w: WorkingInputs): AnalysisResult {
 
   const comparablesText = market.comparables.length
     ? `대표 비교단지 ${market.comparables.length}개(최근 ${o.recentMonths}개월 ${area ? "유사면적 " : ""}거래 ${market.pooled.count}건, 중위 ${fmtMan(market.pooled.medianPerM2)}/전용㎡)`
-    : "비교 가능한 단지 없음 — 대표 비교단지를 억지로 채우지 않음";
+    : `반경 내 거리 확인된 비교 가능 단지 없음 — 대표 비교단지를 억지로 채우지 않음${market.needsCheck.length ? `(거리 미확인 후보 ${market.needsCheck.length}곳)` : ""}`;
   const firstPre = events.find((e) => e.prepricing && e.prepricing.assessment !== "notApplicable");
 
   return {
@@ -229,7 +273,8 @@ export function runAnalysis(w: WorkingInputs): AnalysisResult {
       address: w.property.address, exclusiveAreaM2: area, exclusivePyeong: area ? m2ToPyeong(area) : null, buildYear: w.property.buildYear ?? null,
       coordinatesText: coords ? `${coords.lat.toFixed(6)}, ${coords.lng.toFixed(6)} (${coords.source})` : "좌표 미입력",
     },
-    events, market, price, observed, supply,
+    events, market, price, observed, supply, excludedEvents,
+    collection: lastCol ? { status: lastCol.status, text: `${lastCol.at.slice(0, 16).replace("T", " ")} 수집: ${lastCol.status === "complete" ? "전체 수집·대사 완료" : lastCol.status === "partial" ? "일부 수집(누락 가능)" : lastCol.status === "unset" ? "미설정" : "실패"}` } : null,
     causalEffect: { status: "notEstimated", text: "미추정 — 검증된 통계 모델을 적용하지 않아 입지 변화의 인과적 가격효과를 추정하지 않음" },
     flags,
     summary: {
@@ -295,19 +340,24 @@ function analyzeEvent(ev: LocationEvent, w: WorkingInputs, asOf: DateParts, coor
     ev.category === "supply" ? null : walk === null ? "보행 경로 자료 없음 — 보행시간 미산출" : `보행 ${walk}분(${ev.access?.routeSource ?? "출처 미기재"})`,
   ].filter(Boolean).join(" · ");
 
-  const evs = ev.evidenceKeys.map((k) => evByKey.get(k)).filter(Boolean) as WorkingInputs["evidence"];
+  const linked = ev.evidenceKeys.map((k) => evByKey.get(k)).filter(Boolean) as WorkingInputs["evidence"];
+  const evs = linked.filter((e) => !laterThan(e.publishedOn, asOf));
+  const afterAsOf = linked.length - evs.length;
   const byStatus = { confirmed: 0, needsApplicability: 0, inconsistent: 0, hardToVerify: 0 } as Record<EvidenceStatus, number>;
-  evs.forEach((e) => byStatus[e.status]++);
-  const confirmedOfficial = byStatus.confirmed > 0;
-  if (!confirmedOfficial) flags.push({ level: ev.category === "supply" ? "medium" : "high", area: ev.category === "supply" ? "supply" : "location", text: `${ev.name}: 공식 자료로 확인된 근거 없음` });
+  const levels = { userInput: 0, sourceCited: 0, originalChecked: 0 } as Record<EvidenceLevel, number>;
+  evs.forEach((e) => { byStatus[e.status]++; levels[evidenceLevel(e)]++; });
+  const originalChecked = levels.originalChecked > 0;
+  const evText = !evs.length ? "근거 미기록" : [levels.originalChecked ? `공식 원문 대조 기록 ${levels.originalChecked}건(사용자 기록)` : null, levels.sourceCited ? `출처 기재 ${levels.sourceCited}건` : null, levels.userInput ? `출처 미기재 ${levels.userInput}건` : null].filter(Boolean).join("·");
+  if (!originalChecked) flags.push({ level: ev.category === "supply" ? "medium" : "high", area: ev.category === "supply" ? "supply" : "location", text: `${ev.name}: 공식 원문 대조 기록 없음(${evText})` });
   if (byStatus.inconsistent) flags.push({ level: "medium", area: "location", text: `${ev.name}: 자료 간 불일치 ${byStatus.inconsistent}건` });
+  if (afterAsOf) flags.push({ level: "low", area: "data", text: `${ev.name}: 기준일 이후 발행 근거 ${afterAsOf}건 제외` });
 
   return {
     key: ev.key, name: ev.name, category: ev.category, categoryLabel: EVENT_CATEGORY_LABEL[ev.category], direction: ev.direction, dataMode: ev.dataMode,
     stageAsOf, cancelled, announcement, initialTarget, expectedTarget, expectedTargetStatus, delayCount,
     timeline: timeline.map(({ _m, _u, ...t }) => t), excludedAfterAsOf, undatedKnowledge, scheduleGaps,
     access: { straightDistanceM: straight, walkMinutes: walk, text: accessText },
-    evidence: { total: evs.length, byStatus, confirmedOfficial }, prepricing: null,
+    evidence: { total: evs.length, byStatus, levels, originalChecked, afterAsOf, text: evText }, prepricing: null,
   };
 }
 
@@ -340,61 +390,79 @@ function analyzeMarket(w: WorkingInputs, asOf: DateParts, area: number | null, c
   w.transactions.forEach((t) => { const k = complexKeyOf(t); groups.set(k, [...(groups.get(k) ?? []), t]); });
   const rowByKey = new Map(txRows.map((r) => [r.key, r]));
   const complexes: ComplexResult[] = [];
+  const nameCount = new Map<string, number>();
+  [...groups.values()].forEach((txs) => nameCount.set(txs[0].complexName.trim(), (nameCount.get(txs[0].complexName.trim()) ?? 0) + 1));
   for (const [ck, txs] of groups) {
     const info = infoByKey.get(ck);
     const ok = txs.filter((t) => rowByKey.get(t.key)!.reasons.length === 0);
     const by = info?.buildYear ?? mode(txs.map((t) => t.buildYear).filter((x): x is number => !!x));
     const loc = info?.location;
-    const dist = info?.distanceM ?? (coords && loc ? haversineM(coords, loc) : null);
+    let dist: number | null = null, distSrc = "없음";
+    if (info?.distanceM !== undefined) { dist = info.distanceM; distSrc = info.distanceSource ?? "사용자 입력 거리"; }
+    else if (coords && loc) { dist = haversineM(coords, loc); distSrc = `좌표 간 직선거리(단지 좌표: ${info?.locationSource ?? "출처 미기재"})`; }
     const stats = computeStats(ok.map((t) => ({ perM2: t.priceKrw / t.exclusiveAreaM2, complex: ck })));
     const dates = ok.map((t) => t.contractDate).sort();
     const reasons: string[] = [];
     const subjectYear = w.property.buildYear ?? null;
     const byDiff = by && subjectYear ? by - subjectYear : null;
-    let excluded = false;
     const forced = info?.userDecision === "include";
-    if (info?.userDecision === "exclude") { reasons.push(`사용자 제외${info.userReason ? `: ${info.userReason}` : ""}`); excluded = true; }
-    if (ok.length === 0) { reasons.push(`최근 ${o.recentMonths}개월 ${band ? "유사면적 " : ""}거래 없음`); excluded = true; }
-    else if (ok.length < o.minComplexTrades && !forced) { reasons.push(`최근 ${o.recentMonths}개월 ${band ? "유사면적 " : ""}거래 ${ok.length}건 — 표본 부족(기준 ${o.minComplexTrades}건)`); excluded = true; }
-    if (dist !== null && dist > o.radiusM && !forced) { reasons.push(`거리 약 ${Math.round(dist).toLocaleString("ko-KR")}m — 반경 ${o.radiusM.toLocaleString("ko-KR")}m 초과`); excluded = true; }
-    if (byDiff !== null && Math.abs(byDiff) > o.buildYearBand && !forced) { reasons.push(`준공연도 차이 ${Math.abs(byDiff)}년 — 기준 ${o.buildYearBand}년 초과`); excluded = true; }
-    if (dist === null) reasons.push("거리 미확인");
+    let status: ComplexResult["status"] = "eligible";
+    if (info?.userDecision === "exclude") { reasons.push(`사용자 제외${info.userReason ? `: ${info.userReason}` : ""}`); status = "excluded"; }
+    if (ok.length === 0) { reasons.push(`최근 ${o.recentMonths}개월 ${band ? "유사면적 " : ""}거래 없음`); status = "excluded"; }
+    else if (ok.length < o.minComplexTrades && !forced) { reasons.push(`최근 ${o.recentMonths}개월 ${band ? "유사면적 " : ""}거래 ${ok.length}건 — 표본 부족(기준 ${o.minComplexTrades}건)`); status = "excluded"; }
+    if (dist !== null && dist > o.radiusM) { reasons.push(`거리 약 ${Math.round(dist).toLocaleString("ko-KR")}m — 반경 ${o.radiusM.toLocaleString("ko-KR")}m 밖`); status = "excluded"; }
+    if (byDiff !== null && Math.abs(byDiff) > o.buildYearBand && !forced) { reasons.push(`준공연도 차이 ${Math.abs(byDiff)}년 — 기준 ${o.buildYearBand}년 초과`); status = "excluded"; }
+    if (dist === null) { reasons.push(coords ? "단지 좌표·거리 미확인" : "본건 좌표 없음 — 거리 계산 불가"); if (status === "eligible") status = "needsCheck"; }
     if (by === null) reasons.push("준공연도 미확인");
-    if (forced) reasons.push("사용자 포함 지정");
+    if (forced) reasons.push("사용자 포함 지정(표본·연식 기준만 완화, 거리 기준은 유지)");
     const areas = ok.map((t) => t.exclusiveAreaM2).sort((a, b) => a - b);
     const medArea = areas.length ? areas[Math.floor(areas.length / 2)] : null;
+    const t0 = txs[0];
+    const inWindow = txs.filter((t) => { const r = rowByKey.get(t.key)!; return !t.cancelled && !r.reasons.some((x) => x.includes("이전") || x.includes("이후") || x.includes("형식")); }).length;
     complexes.push({
-      complexKey: ck, name: txs[0].complexName, dong: txs[0].dong,
+      complexKey: ck, name: t0.complexName, dong: t0.dong,
       buildYear: by, buildYearSource: info?.buildYear ? "사용자 확인" : by ? "거래 자료" : "없음",
-      distanceM: dist, distanceSource: info?.distanceM !== undefined ? (info.distanceSource ?? "사용자 입력") : dist !== null ? "좌표 간 직선거리" : "없음",
+      distanceM: dist, distanceSource: distSrc,
       recentTrades: ok.length, recentAreaMin: areas.length ? areas[0] : null, recentAreaMax: areas.length ? areas[areas.length - 1] : null,
       stats, latestTrade: dates[dates.length - 1] ?? null,
-      status: excluded ? "excluded" : "eligible", reasons, selectionReason: "",
+      status, reasons, selectionReason: "",
+      identityBasis: t0.complexId ? `단지코드 ${t0.complexId}` : `단지명+${[t0.sggCd ? `시군구 ${t0.sggCd}` : null, t0.dong ? `법정동 ${t0.dong}` : null, t0.jibun ? `지번 ${t0.jibun}` : null].filter(Boolean).join("+") || "추가 식별정보 없음"}`,
+      sameNameCount: nameCount.get(t0.complexName.trim()) ?? 1,
+      address: info?.address,
+      samples: { total: txs.length, cancelled: txs.filter((t) => t.cancelled).length, inWindow, areaMatched: ok.length },
       differences: { buildYearDiff: byDiff, distanceM: dist, areaDiffM2: area && medArea ? medArea - area : null },
       dataModes: [...new Set(txs.map((t) => t.dataMode))], sources: [...new Set(txs.map((t) => t.source ?? DATA_MODE_LABEL[t.dataMode]))],
     });
   }
-  // 대표 비교단지: 거리 확인된 단지 우선 → 가까운 순 → 준공연도 차이 작은 순 → 거래 많은 순, 최대 5개
+  // 대표 비교단지: 거리가 확인된 반경 내 단지만, 가까운 순 → 준공연도 차이 작은 순 → 거래 많은 순, 최대 5개
   const eligible = complexes.filter((c) => c.status === "eligible").sort((a, b) =>
-    (a.distanceM === null ? 1 : 0) - (b.distanceM === null ? 1 : 0) || (a.distanceM ?? 0) - (b.distanceM ?? 0) ||
-    Math.abs(a.differences.buildYearDiff ?? 99) - Math.abs(b.differences.buildYearDiff ?? 99) || b.recentTrades - a.recentTrades);
+    a.distanceM! - b.distanceM! || Math.abs(a.differences.buildYearDiff ?? 99) - Math.abs(b.differences.buildYearDiff ?? 99) || b.recentTrades - a.recentTrades);
   const comparables = eligible.slice(0, 5);
   comparables.forEach((c) => {
     c.status = "selected";
     c.selectionReason = [
-      c.distanceM !== null ? `약 ${Math.round(c.distanceM).toLocaleString("ko-KR")}m(반경 ${o.radiusM.toLocaleString("ko-KR")}m 이내)` : "거리 미확인(확인 필요)",
+      `약 ${Math.round(c.distanceM!).toLocaleString("ko-KR")}m(반경 ${o.radiusM.toLocaleString("ko-KR")}m 이내, ${c.distanceSource})`,
       c.buildYear ? `준공 ${c.buildYear}년${c.differences.buildYearDiff !== null ? `(본건 대비 ${c.differences.buildYearDiff > 0 ? "+" : ""}${c.differences.buildYearDiff}년)` : ""}` : "준공연도 미확인",
       `최근 ${o.recentMonths}개월 ${area ? "유사면적 " : ""}거래 ${c.recentTrades}건`,
+      `식별: ${c.identityBasis}${c.sameNameCount > 1 ? `(동명 단지 ${c.sameNameCount}곳 중 하나)` : ""}`,
     ].join(" · ");
   });
-  eligible.slice(5).forEach((c) => c.reasons.push("대표 5개 순위 밖(거리·연식 기준)"));
+  eligible.slice(5).forEach((c) => c.reasons.push("반경 내 후보이나 대표 5개 순위 밖(거리·연식 기준)"));
+  const needsCheck = complexes.filter((c) => c.status === "needsCheck");
   const selectedKeys = new Set(comparables.map((c) => c.complexKey));
-  txRows.forEach((r) => { r.included = r.reasons.length === 0 && selectedKeys.has(r.complexKey); if (r.reasons.length === 0 && !r.included) r.reasons.push("대표 비교단지 아님"); });
+  const statusByKey = new Map(complexes.map((c) => [c.complexKey, c.status]));
+  txRows.forEach((r) => {
+    r.included = r.reasons.length === 0 && selectedKeys.has(r.complexKey);
+    if (r.reasons.length === 0 && !r.included) { const st = statusByKey.get(r.complexKey); r.reasons.push(st === "needsCheck" ? "거리 미확인 후보 단지(통계 제외)" : st === "excluded" ? "제외된 단지" : "대표 5개 밖 단지"); }
+  });
   const pooled = computeStats(txRows.filter((r) => r.included).map((r) => ({ perM2: r.perM2!, complex: r.complexKey })));
 
   if (w.transactions.length && !comparables.length) flags.push({ level: "high", area: "price", text: "비교 가능한 단지 없음(거래 표본·면적·거리·준공연도 기준 미충족)" });
   else if (comparables.length && comparables.length < 3) flags.push({ level: "medium", area: "price", text: `비교 가능한 단지 ${comparables.length}개뿐 — 비교 범위 제한` });
-  if (comparables.some((c) => c.distanceM === null)) flags.push({ level: "medium", area: "price", text: "일부 비교단지 거리 미확인 — 단지 위치 확인 필요" });
+  if (!coords && w.transactions.length) flags.push({ level: "high", area: "price", text: "본건 좌표 없음 — 거리를 확인할 수 없어 반경 내 대표 비교단지를 선정하지 못함(사용자가 거리를 입력한 단지만 가능)" });
+  if (needsCheck.length) flags.push({ level: "medium", area: "price", text: `거리 미확인 단지 ${needsCheck.length}곳 — 확인 필요 후보로 분리, 대표 통계에서 제외` });
+  const sameName = complexes.filter((c) => c.sameNameCount > 1 && c.status !== "excluded");
+  if (sameName.length) flags.push({ level: "low", area: "price", text: `같은 이름의 단지가 여러 곳(${[...new Set(sameName.map((c) => c.name))].join(", ")}) — 단지코드·시군구·법정동·지번으로 구분` });
   if (comparables.length && !w.property.buildYear) flags.push({ level: "medium", area: "price", text: "본건 준공(예정)연도 미입력 — 비교단지와 연식 차이 비교 불가" });
   else if (comparables.some((c) => c.buildYear === null)) flags.push({ level: "medium", area: "price", text: "일부 비교단지 준공연도 미확인" });
   const bigYear = comparables.filter((c) => c.differences.buildYearDiff !== null && Math.abs(c.differences.buildYearDiff) >= 5);
@@ -403,7 +471,7 @@ function analyzeMarket(w: WorkingInputs, asOf: DateParts, area: number | null, c
   if (!area && w.transactions.length) flags.push({ level: "medium", area: "price", text: "전용면적 미입력 — 모든 면적 거래를 ㎡당으로 비교(면적대 차이 미반영)" });
 
   return {
-    recentWindow: { start: start.raw, end: asOfMonth.raw, months: o.recentMonths }, areaFilter: band, complexes, comparables, pooled, excludedTrades, validTrades, txRows,
+    recentWindow: { start: start.raw, end: asOfMonth.raw, months: o.recentMonths }, areaFilter: band, complexes, comparables, needsCheck, pooled, excludedTrades, validTrades, txRows,
     dataModes: [...new Set(w.transactions.map((t) => t.dataMode))], sources: [...new Set(w.transactions.map((t) => t.source ?? DATA_MODE_LABEL[t.dataMode]))].slice(0, 5),
   };
 }
@@ -466,7 +534,7 @@ function observeChange(w: WorkingInputs, asOf: DateParts, events: EventResult[],
   return { status: "computed", anchor: `${anchorEv.name} 발표 ${formatDateValue(a)}`, window, pre: ps, post: qs, changePct, text: `관찰된 변화: ${anchorEv.name} 발표 전후 대표 비교단지 중위 단가 ${changePct > 0 ? "+" : ""}${changePct.toFixed(1)}%(전 ${ps.count}건·후 ${qs.count}건). 시장 전반 변화가 섞여 있어 입지 효과로 볼 수 없음.` };
 }
 
-function analyzeSupply(w: WorkingInputs, asOf: DateParts, area: number | null, flags: Flag[]): AnalysisResult["supply"] {
+function analyzeSupply(w: WorkingInputs, activeEvents: LocationEvent[], eventResults: EventResult[], asOf: DateParts, area: number | null, flags: Flag[]): AnalysisResult["supply"] {
   const o = w.options;
   const sale = parseDateValue(w.schedule.saleStart ?? null), comp = parseDateValue(w.schedule.completion ?? null);
   let from: DateParts, to: DateParts, windowText: string;
@@ -481,9 +549,14 @@ function analyzeSupply(w: WorkingInputs, asOf: DateParts, area: number | null, f
   }
   const band = area ? [area * (1 - o.areaBandPct / 100), area * (1 + o.areaBandPct / 100)] : null;
   let overlappingHouseholds = 0;
-  const rows: SupplyResult[] = w.events.filter((e) => e.category === "supply").map((e) => {
+  const rows: SupplyResult[] = activeEvents.filter((e) => e.category === "supply").map((e) => {
     const s = e.supply ?? { stage: "plan" as const };
     const notes: string[] = [];
+    const cancelledAsOf = !!eventResults.find((r) => r.key === e.key)?.cancelled;
+    if (cancelledAsOf) {
+      notes.push("기준일 이전 취소 확인 — 물량 집계 제외");
+      return { key: e.key, name: e.name, stage: `${SUPPLY_STAGE_LABEL[s.stage]}(취소)`, households: s.households ?? null, dataMode: e.dataMode, timing: "no" as const, area: "unknown" as const, notes, cancelledAsOf };
+    }
     const dates = [parseDateValue(s.saleDate ?? null), parseDateValue(s.occupancyDate ?? null)].filter(Boolean) as DateParts[];
     let timing: SupplyResult["timing"] = "unknown";
     if (!dates.length) notes.push("공급 시기 미입력");
@@ -493,10 +566,10 @@ function analyzeSupply(w: WorkingInputs, asOf: DateParts, area: number | null, f
     else notes.push("면적대 비교 불가");
     if (timing === "yes" && s.households) overlappingHouseholds += s.households;
     if (timing === "yes") flags.push({ level: areaO === "yes" ? "high" : "medium", area: "supply", text: `경쟁 공급 ${e.name}(${SUPPLY_STAGE_LABEL[s.stage]}${s.households ? `, ${s.households.toLocaleString("ko-KR")}세대` : ""}) — 시기${areaO === "yes" ? "·면적대" : ""} 겹침` });
-    return { key: e.key, name: e.name, stage: SUPPLY_STAGE_LABEL[s.stage], households: s.households ?? null, dataMode: e.dataMode, timing, area: areaO, notes };
+    return { key: e.key, name: e.name, stage: SUPPLY_STAGE_LABEL[s.stage], households: s.households ?? null, dataMode: e.dataMode, timing, area: areaO, notes, cancelledAsOf };
   });
   return {
     rows, window: windowText, overlappingHouseholds,
-    text: rows.length ? `시기 겹침 ${rows.filter((r) => r.timing === "yes").length}건(${overlappingHouseholds.toLocaleString("ko-KR")}세대, ${windowText}). 분양률·매각기간으로 환산하지 않음` : "입력된 주변 입주 물량 없음",
+    text: rows.length ? `${rows.some((r) => r.cancelledAsOf) ? `취소 ${rows.filter((r) => r.cancelledAsOf).length}건 제외, ` : ""}시기 겹침 ${rows.filter((r) => r.timing === "yes").length}건(${overlappingHouseholds.toLocaleString("ko-KR")}세대, ${windowText}). 분양률·매각기간으로 환산하지 않음` : "입력된 주변 입주 물량 없음",
   };
 }
