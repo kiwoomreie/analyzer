@@ -151,8 +151,30 @@ export function MapPanel({ points, kakaoKey }: { points: { n: number; label: str
 declare const __PREVIEW__: boolean | undefined;
 const IS_PREVIEW = typeof __PREVIEW__ !== "undefined" && __PREVIEW__;
 
-/** 파일 내려받기. 미리보기(호스팅 프레임에서는 다운로드가 막힐 수 있음)에서는 같은 내용을 화면 패널로도 보여 복사할 수 있게 한다. */
+/** 호스팅 미리보기(claude.ai 아티팩트)에서 제공되는 저장 기능. 없으면 null. */
+let hostDownloads: Promise<any> | undefined;
+function getHostDownloads(): Promise<any> {
+  if (!hostDownloads) {
+    const c = (window as any).claude;
+    hostDownloads = c && typeof c.use === "function" ? Promise.resolve(c.use("downloads")).catch(() => null) : Promise.resolve(null);
+  }
+  return hostDownloads;
+}
+
+/** 파일 내려받기. 미리보기에서는 호스트 저장 기능 → 실패 시 화면 패널(복사)로 대체한다. */
 export function download(filename: string, text: string, mime = "text/markdown;charset=utf-8") {
+  if (IS_PREVIEW) {
+    const fallback = (why?: string) => window.dispatchEvent(new CustomEvent("la:download", { detail: { filename, text, why } }));
+    getHostDownloads().then((dl) => {
+      if (!dl) { plainDownload(filename, text, mime); fallback(); return; }
+      dl.save({ filename, data: text }).catch((e: any) => { if (e?.code !== "declined") fallback(`저장 실패(${e?.code ?? "unknown"})`); });
+    });
+    return;
+  }
+  plainDownload(filename, text, mime);
+}
+
+function plainDownload(filename: string, text: string, mime: string) {
   try {
     const blob = new Blob([text], { type: mime });
     const a = document.createElement("a");
@@ -161,8 +183,7 @@ export function download(filename: string, text: string, mime = "text/markdown;c
     document.body.appendChild(a);
     a.click();
     setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
-  } catch { /* 아래 패널로 대체 */ }
-  if (IS_PREVIEW) window.dispatchEvent(new CustomEvent("la:download", { detail: { filename, text } }));
+  } catch { /* 미리보기에서는 패널로 대체 */ }
 }
 
 /** 클립보드 복사(실패 시 false). */
@@ -187,7 +208,7 @@ export function CopyButton({ text, label = "복사", testId }: { text: string; l
 
 /** 미리보기 전용: 내려받기 대신 내용을 보여주는 패널. */
 export function DownloadFallback() {
-  const [item, setItem] = useState<{ filename: string; text: string } | undefined>();
+  const [item, setItem] = useState<{ filename: string; text: string; why?: string } | undefined>();
   useEffect(() => {
     const on = (e: Event) => setItem((e as CustomEvent).detail);
     window.addEventListener("la:download", on);
@@ -198,7 +219,7 @@ export function DownloadFallback() {
     <div className="dl-fallback" role="dialog" aria-label="내려받기 내용" data-testid="dl-fallback">
       <div className="dl-head">
         <b>{item.filename}</b>
-        <span className="muted small">미리보기 화면에서는 파일 내려받기가 막힐 수 있어 내용을 여기에도 표시합니다.</span>
+        <span className="muted small">{item.why ? `${item.why} — ` : ""}미리보기 화면에서는 파일 내려받기가 막힐 수 있어 내용을 여기에도 표시합니다.</span>
         <CopyButton text={item.text} label="전체 복사" testId="dl-copy" />
         <button onClick={() => setItem(undefined)} data-testid="dl-close">닫기</button>
       </div>

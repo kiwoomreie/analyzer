@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { CopyButton, download, Section, Select, Text } from "../components.tsx";
 import type { SectionProps } from "../AnalysisView.tsx";
+import { PREVIEW } from "../nav.ts";
 import { diffWorking, reportChanges, reportDraft, reportQuestions, reportSummary, toPlainText } from "../../shared/report.ts";
 import { seoulNowIso, seoulToday } from "../../shared/dates.ts";
 import type { WorkingInputs } from "../../shared/model.ts";
@@ -29,7 +30,7 @@ export function ReportSection({ rec, setRec }: SectionProps) {
         <button onClick={() => download(`${base}.md`, md)} data-testid="dl-md">Markdown 내려받기</button>
         <button onClick={() => download(`${base}.txt`, toPlainText(md), "text/plain;charset=utf-8")}>텍스트 내려받기</button>
         <CopyButton text={md} label="보고서 복사" testId="copy-report" />
-        <button onClick={() => window.print()}>인쇄 / PDF 저장</button>
+        <button onClick={() => { try { window.print(); } catch { /* 미리보기 프레임에서 막힘 */ } }} title={PREVIEW ? "claude.ai 미리보기 화면에서는 인쇄가 막힐 수 있음 — 보고서 복사 또는 Markdown 저장 사용" : undefined}>인쇄 / PDF 저장{PREVIEW ? "(미리보기에선 제한)" : ""}</button>
       </div>
       <p className="muted small">보고서는 마지막 분석 실행 결과(#{rec.runs[rec.runs.length - 1].runNo})와 같은 계산 함수로 만듭니다. 누구에게도 자동 발송하지 않으며 협의체로 결과를 보내지 않습니다. 외부 AI 호출 없음.</p>
       {kind === "changes" && (
