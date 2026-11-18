@@ -172,14 +172,14 @@ export function AnalysisView({ storage, recKey, session }: { storage: StorageKin
             <thead><tr><th>단지</th><th>준공연도(본건 대비)</th><th>거리</th><th>최근 거래</th><th>거래 전용면적</th><th>중위 단가(만원/전용㎡)</th><th>최근 계약</th><th>선정 이유</th><th>자료</th></tr></thead>
             <tbody>{r.market.comparables.map((c) => (
               <tr key={c.complexKey}>
-                <td><b>{c.name}</b>{c.dong ? <div className="muted small">{c.dong}</div> : null}</td>
+                <td className="name-cell"><b>{c.name}</b>{c.dong ? <div className="muted small">{c.dong}</div> : null}</td>
                 <td>{c.buildYear ?? "미확인"}{c.differences.buildYearDiff !== null ? ` (${c.differences.buildYearDiff > 0 ? "+" : ""}${c.differences.buildYearDiff}년)` : ""}</td>
                 <td>{`${Math.round(c.distanceM!).toLocaleString("ko-KR")}m`}</td>
                 <td>{c.recentTrades}건</td>
                 <td>{c.recentAreaMin ? `${fmtNum(c.recentAreaMin, 2)}~${fmtNum(c.recentAreaMax, 2)}㎡` : "-"}</td>
                 <td>{fmtMan(c.stats.medianPerM2).replace("만원", "")}</td>
                 <td>{c.latestTrade ?? "-"}</td>
-                <td className="small">{c.selectionReason}</td>
+                <td className="small wide-cell">{c.selectionReason}</td>
                 <td className="small">{c.dataModes.map((m) => DATA_MODE_LABEL[m]).join("·")}</td>
               </tr>
             ))}</tbody>

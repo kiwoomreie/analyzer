@@ -193,7 +193,7 @@ export function MarketSection({ rec, getRec, update, setRec, session }: SectionP
                   <td>{c.distanceM === null ? <span className="warn-text">미확인</span> : `${Math.round(c.distanceM).toLocaleString("ko-KR")}m`}<div className="muted">{c.distanceSource}</div></td>
                   <td>전체 {c.samples.total} · 해제 {c.samples.cancelled}<br />기간 내 {c.samples.inWindow} · 유사면적 {c.samples.areaMatched}</td>
                   <StatCells s={c.stats} />
-                  <td>{c.status === "selected" ? c.selectionReason : c.reasons.join(", ")}</td>
+                  <td className="wide-cell">{c.status === "selected" ? c.selectionReason : c.reasons.join(", ")}</td>
                   <td><Num label="" integer value={info?.distanceM} onChange={(v) => setInfo(c.complexKey, (i) => { i.distanceM = v; i.distanceSource = v === undefined ? undefined : "사용자 입력 거리"; })} /></td>
                   <td><Num label="" integer value={info?.buildYear} onChange={(v) => setInfo(c.complexKey, (i) => { i.buildYear = v; })} /></td>
                   <td><Select label="" value={info?.userDecision ?? ""} options={[["", "자동"], ["include", "포함(표본·연식 완화)"], ["exclude", "제외"]]} onChange={(v) => setInfo(c.complexKey, (i) => { i.userDecision = (v || undefined) as any; })} /></td>
@@ -239,7 +239,7 @@ export function MarketSection({ rec, getRec, update, setRec, session }: SectionP
                   <td>{t.complexName}{t.dong ? <div className="muted">{t.dong} {t.jibun ?? ""}</div> : null}</td><td>{fmtNum(t.exclusiveAreaM2)}</td><td>{t.floor ?? "-"}</td><td>{(t.priceKrw / 1e4).toLocaleString("ko-KR")}</td>
                   <td>{fmtNum(t.priceKrw / t.exclusiveAreaM2 / 1e4, 1)}</td><td>{t.contractDate}</td>
                   <td>{t.cancelled ? "해제" : ""}{t.reviewFlag && <div title={t.reviewFlag.note}><Badge tone="warn">{t.reviewFlag.kind === "idConflict" ? "ID 충돌 확인 필요" : t.reviewFlag.kind === "idChangeUnconfirmed" ? "ID 값 변경 보류" : "별도 거래/정정 확인 필요"}</Badge></div>}{t.cancelAmbiguity && <div className="muted">같은 조건 {t.cancelAmbiguity.size}건 중 해제 {t.cancelAmbiguity.cancelled}건(대상 특정 불가)</div>}{t.officialId && <div className="muted">ID {t.officialId}·출처 {t.idScope ?? "미지정"}</div>}{(t.sameKeyCount ?? 1) > 1 && <div className="muted">같은 조건 {t.sameKeyCount}건(구별 불가)</div>}{t.revisions?.length ? <div className="muted">{t.revisions.map((v) => v.change).join(" / ")}</div> : null}</td>
-                  <td>{row ? (row.included ? "포함" : row.reasons.join(", ")) : <span className="warn-text">결과 이후 추가 — 재분석 필요</span>}</td>
+                  <td className="wide-cell">{row ? (row.included ? "포함" : row.reasons.join(", ")) : <span className="warn-text">결과 이후 추가 — 재분석 필요</span>}</td>
                   <td><Text label="" value={t.manualExclusion} onChange={(v) => update((x) => { if (i >= 0) x.transactions[i].manualExclusion = v; })} /></td>
                   <td><ModeBadge mode={t.dataMode} /> <span className="muted">{t.source}</span></td>
                 </tr>

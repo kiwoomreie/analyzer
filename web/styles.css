@@ -22,7 +22,7 @@ button.danger{color:var(--bad);border-color:#e3b3ae}
 button.link{border:none;background:none;color:var(--accent);padding:0;text-decoration:underline}button.link.danger{color:var(--bad)}
 .filebtn input{display:none}
 .toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:6px 0}
-.tbl{width:100%;border-collapse:collapse;margin:6px 0;background:#fff}.tbl th,.tbl td{border-bottom:1px solid #e8ebee;padding:5px 6px;text-align:left;vertical-align:top}
+.tbl{width:100%;border-collapse:collapse;margin:6px 0;background:#fff}.tbl th,.tbl td{word-break:keep-all;border-bottom:1px solid #e8ebee;padding:5px 6px;text-align:left;vertical-align:top}
 .tbl th{background:#f3f5f7;font-weight:600;font-size:12px;color:var(--ink2)}.tbl tr.excluded td{color:#8a9198}
 .badge{display:inline-block;font-size:11.5px;padding:1px 7px;border-radius:10px;border:1px solid var(--line);background:#f3f5f7;color:var(--ink2);white-space:nowrap}
 .tone-info{background:var(--infobg);border-color:#c5d6ef;color:#1a4c94}.tone-warn{background:var(--warnbg);border-color:#f0d39a;color:var(--warn)}
@@ -58,7 +58,8 @@ pre.report,pre.plain{white-space:pre-wrap;word-break:break-word;background:#fbfc
 .status-list{margin:0;padding-left:18px}
 code{background:#f0f2f5;padding:0 4px;border-radius:3px;font-size:12px}
 @media (max-width:900px){.grid3,.summary,.split,.map-wrap{grid-template-columns:1fr}}
-@media print{.top,.view-head .actions,.toolbar,.section>summary,.banner,.summary,.view-head,.section:not(#sec-report),h4,.sec-body>p,.sec-body>.toolbar{display:none!important}
+.dl-fallback{position:fixed;left:8px;right:8px;bottom:8px;z-index:50;background:#fff;border:1px solid #bbb;border-radius:8px;box-shadow:0 4px 18px rgba(0,0,0,.18);padding:10px;max-height:60vh;display:flex;flex-direction:column;gap:8px}.dl-head{display:flex;flex-wrap:wrap;gap:8px;align-items:center}.dl-fallback textarea{width:100%;min-height:180px;flex:1;font:12px/1.4 ui-monospace,monospace;box-sizing:border-box}
+@media print{.dl-fallback,.top,.view-head .actions,.toolbar,.section>summary,.banner,.summary,.view-head,.section:not(#sec-report),h4,.sec-body>p,.sec-body>.toolbar{display:none!important}
   .section{border:none}.sec-body{border:none;padding:0}pre.report{max-height:none;border:none;background:#fff;font-size:11px}body{background:#fff}}
 .start .addr-row{display:flex;gap:8px;margin:8px 0}
 .start .addr{flex:1;font:inherit;font-size:16px;padding:9px 12px;border:1px solid #b9c0c8;border-radius:6px}
@@ -66,5 +67,5 @@ code{background:#f0f2f5;padding:0 4px;border-radius:3px;font-size:12px}
 .sub-details{margin:10px 0}.sub-details>summary{cursor:pointer;color:var(--accent)}
 .banner.info{background:var(--infobg)}
 .table-scroll{overflow-x:auto;max-width:100%}
-@media (max-width:600px){main{padding:10px 10px 48px}.top{padding:10px 12px}.view-head{flex-direction:column}.actions{min-width:0;flex-direction:row;flex-wrap:wrap}.form.grid{grid-template-columns:1fr}.start .addr-row{flex-direction:column}.card .tbl{display:block;overflow-x:auto}.kv{grid-template-columns:1fr}.kv dt{margin-top:6px}}
+@media (max-width:600px){main{padding:10px 10px 48px}.top{padding:10px 12px}.view-head{flex-direction:column}.actions{min-width:0;flex-direction:row;flex-wrap:wrap}.form.grid{grid-template-columns:1fr}.start .addr-row{flex-direction:column}.tbl{display:block;overflow-x:auto;max-width:100%;-webkit-overflow-scrolling:touch}.tbl th,.tbl td{word-break:keep-all;min-width:4.2em}.tbl td.wide-cell{min-width:15em}.tbl td.name-cell{min-width:7em}.kv{grid-template-columns:1fr}.kv dt{margin-top:6px}}
 [data-testid=complex-table] td .field input,[data-testid=complex-table] td .field select{width:96px}[data-testid=tx-table] td .field input{width:120px}

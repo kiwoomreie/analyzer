@@ -4,7 +4,7 @@ import { getSession, getSessionError, lookupPublicData, type SessionInfo } from 
 import { draftStore, localStore, memoryDrafts } from "./store.ts";
 import { AnalysisView } from "./AnalysisView.tsx";
 import { currentPath, navigate, PREVIEW, withRun } from "./nav.ts";
-import { DateText, Num, Select, Text, download } from "./components.tsx";
+import { DateText, DownloadFallback, Num, Select, Text, download } from "./components.tsx";
 import { LABELS, type MoneyUnit } from "../shared/contract.ts";
 import { APP_NAME, emptyWorking, newKey, newManualRecord, ORIGIN_LABEL, type AnalysisRecord, type ReviewPrice } from "../shared/model.ts";
 import { detectFile, makeBackup } from "../shared/importers.ts";
@@ -32,6 +32,7 @@ function App() {
         <span className="muted small">주소로 시작 · 입지 변화 / 실거래 비교 / 확인할 사항 · 협의체와 별도로 사용</span>
       </header>
       {m ? <AnalysisView key={path} storage={m[1] === "a" ? "server-temporary" : m[1] === "l" ? "browser-local" : "draft"} recKey={m[2]} session={sess} /> : <Home session={sess} />}
+      <DownloadFallback />
     </div>
   );
 }

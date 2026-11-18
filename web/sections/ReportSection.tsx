@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { download, Section, Select, Text } from "../components.tsx";
+import { CopyButton, download, Section, Select, Text } from "../components.tsx";
 import type { SectionProps } from "../AnalysisView.tsx";
 import { diffWorking, reportChanges, reportDraft, reportQuestions, reportSummary, toPlainText } from "../../shared/report.ts";
 import { seoulNowIso, seoulToday } from "../../shared/dates.ts";
@@ -28,6 +28,7 @@ export function ReportSection({ rec, setRec }: SectionProps) {
         <Select label="출력물" value={kind} options={KINDS} onChange={setKind} testId="report-kind" />
         <button onClick={() => download(`${base}.md`, md)} data-testid="dl-md">Markdown 내려받기</button>
         <button onClick={() => download(`${base}.txt`, toPlainText(md), "text/plain;charset=utf-8")}>텍스트 내려받기</button>
+        <CopyButton text={md} label="보고서 복사" testId="copy-report" />
         <button onClick={() => window.print()}>인쇄 / PDF 저장</button>
       </div>
       <p className="muted small">보고서는 마지막 분석 실행 결과(#{rec.runs[rec.runs.length - 1].runNo})와 같은 계산 함수로 만듭니다. 누구에게도 자동 발송하지 않으며 협의체로 결과를 보내지 않습니다. 외부 AI 호출 없음.</p>
