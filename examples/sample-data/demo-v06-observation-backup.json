@@ -1,0 +1,1023 @@
+{
+  "format": "location-analyzer-backup",
+  "formatVersion": 1,
+  "exportedAt": "2026-11-19T00:00:00Z",
+  "note": "새 앱 전용 백업. 협의체 결과 반환 형식이 아님.",
+  "analyses": [
+    {
+      "format": "location-analyzer-analysis",
+      "formatVersion": 1,
+      "key": "lc_demo_v06",
+      "title": "가상 시험",
+      "createdAt": "2026-11-19T10:59:31.328+09:00",
+      "updatedAt": "2026-11-19T10:59:31.329+09:00",
+      "origin": {
+        "kind": "manual"
+      },
+      "original": {
+        "working": {
+          "asOf": "2026-11-01",
+          "property": {
+            "address": "가상 시험",
+            "exclusiveAreaM2": 84
+          },
+          "reviewPrice": null,
+          "schedule": {},
+          "options": {
+            "comparisonMonthsBefore": 24,
+            "comparisonMonthsAfter": 24,
+            "recentMonths": 12,
+            "areaBandPct": 15,
+            "radiusM": 1500,
+            "buildYearBand": 10,
+            "minComplexTrades": 3,
+            "minSample": 3
+          },
+          "events": [
+            {
+              "key": "ev",
+              "name": "가상 사건",
+              "category": "transport",
+              "direction": "unknown",
+              "dataMode": "demo",
+              "evidenceKeys": [],
+              "milestones": [
+                {
+                  "key": "ms",
+                  "type": "opening",
+                  "status": "actual",
+                  "date": "2025-07-15",
+                  "evidenceKeys": []
+                }
+              ]
+            }
+          ],
+          "evidence": [],
+          "transactions": [
+            {
+              "key": "A-pre-0",
+              "complexName": "A",
+              "exclusiveAreaM2": 84,
+              "priceKrw": 84000000,
+              "contractDate": "2025-06-10",
+              "cancelled": false,
+              "dataMode": "demo",
+              "floor": 0
+            },
+            {
+              "key": "A-pre-1",
+              "complexName": "A",
+              "exclusiveAreaM2": 84,
+              "priceKrw": 84000000,
+              "contractDate": "2025-06-11",
+              "cancelled": false,
+              "dataMode": "demo",
+              "floor": 1
+            },
+            {
+              "key": "A-pre-2",
+              "complexName": "A",
+              "exclusiveAreaM2": 84,
+              "priceKrw": 84000000,
+              "contractDate": "2025-06-12",
+              "cancelled": false,
+              "dataMode": "demo",
+              "floor": 2
+            },
+            {
+              "key": "A-post-0",
+              "complexName": "A",
+              "exclusiveAreaM2": 84,
+              "priceKrw": 100800000,
+              "contractDate": "2025-08-10",
+              "cancelled": false,
+              "dataMode": "demo",
+              "floor": 0
+            },
+            {
+              "key": "A-post-1",
+              "complexName": "A",
+              "exclusiveAreaM2": 84,
+              "priceKrw": 100800000,
+              "contractDate": "2025-08-11",
+              "cancelled": false,
+              "dataMode": "demo",
+              "floor": 1
+            },
+            {
+              "key": "A-post-2",
+              "complexName": "A",
+              "exclusiveAreaM2": 84,
+              "priceKrw": 100800000,
+              "contractDate": "2025-08-12",
+              "cancelled": false,
+              "dataMode": "demo",
+              "floor": 2
+            },
+            {
+              "key": "B-pre-0",
+              "complexName": "B",
+              "exclusiveAreaM2": 84,
+              "priceKrw": 84000000,
+              "contractDate": "2025-06-10",
+              "cancelled": false,
+              "dataMode": "demo",
+              "floor": 0
+            },
+            {
+              "key": "B-pre-1",
+              "complexName": "B",
+              "exclusiveAreaM2": 84,
+              "priceKrw": 84000000,
+              "contractDate": "2025-06-11",
+              "cancelled": false,
+              "dataMode": "demo",
+              "floor": 1
+            },
+            {
+              "key": "B-pre-2",
+              "complexName": "B",
+              "exclusiveAreaM2": 84,
+              "priceKrw": 84000000,
+              "contractDate": "2025-06-12",
+              "cancelled": false,
+              "dataMode": "demo",
+              "floor": 2
+            },
+            {
+              "key": "B-post-0",
+              "complexName": "B",
+              "exclusiveAreaM2": 84,
+              "priceKrw": 92400000.00000001,
+              "contractDate": "2025-08-10",
+              "cancelled": false,
+              "dataMode": "demo",
+              "floor": 0
+            },
+            {
+              "key": "B-post-1",
+              "complexName": "B",
+              "exclusiveAreaM2": 84,
+              "priceKrw": 92400000.00000001,
+              "contractDate": "2025-08-11",
+              "cancelled": false,
+              "dataMode": "demo",
+              "floor": 1
+            },
+            {
+              "key": "B-post-2",
+              "complexName": "B",
+              "exclusiveAreaM2": 84,
+              "priceKrw": 92400000.00000001,
+              "contractDate": "2025-08-12",
+              "cancelled": false,
+              "dataMode": "demo",
+              "floor": 2
+            }
+          ],
+          "complexInfo": [],
+          "attachments": [],
+          "dataLog": [],
+          "collections": [],
+          "observation": {
+            "eventKey": "ev",
+            "milestoneKey": "ms",
+            "months": 6,
+            "impact": [
+              "N:A|||"
+            ],
+            "control": [
+              "N:B|||"
+            ]
+          }
+        }
+      },
+      "working": {
+        "asOf": "2026-11-01",
+        "property": {
+          "address": "가상 시험",
+          "exclusiveAreaM2": 84
+        },
+        "reviewPrice": null,
+        "schedule": {},
+        "options": {
+          "comparisonMonthsBefore": 24,
+          "comparisonMonthsAfter": 24,
+          "recentMonths": 12,
+          "areaBandPct": 15,
+          "radiusM": 1500,
+          "buildYearBand": 10,
+          "minComplexTrades": 3,
+          "minSample": 3
+        },
+        "events": [
+          {
+            "key": "ev",
+            "name": "가상 사건",
+            "category": "transport",
+            "direction": "unknown",
+            "dataMode": "demo",
+            "evidenceKeys": [],
+            "milestones": [
+              {
+                "key": "ms",
+                "type": "opening",
+                "status": "actual",
+                "date": "2025-07-15",
+                "evidenceKeys": []
+              }
+            ]
+          }
+        ],
+        "evidence": [],
+        "transactions": [
+          {
+            "key": "A-pre-0",
+            "complexName": "A",
+            "exclusiveAreaM2": 84,
+            "priceKrw": 84000000,
+            "contractDate": "2025-06-10",
+            "cancelled": false,
+            "dataMode": "demo",
+            "floor": 0
+          },
+          {
+            "key": "A-pre-1",
+            "complexName": "A",
+            "exclusiveAreaM2": 84,
+            "priceKrw": 84000000,
+            "contractDate": "2025-06-11",
+            "cancelled": false,
+            "dataMode": "demo",
+            "floor": 1
+          },
+          {
+            "key": "A-pre-2",
+            "complexName": "A",
+            "exclusiveAreaM2": 84,
+            "priceKrw": 84000000,
+            "contractDate": "2025-06-12",
+            "cancelled": false,
+            "dataMode": "demo",
+            "floor": 2
+          },
+          {
+            "key": "A-post-0",
+            "complexName": "A",
+            "exclusiveAreaM2": 84,
+            "priceKrw": 100800000,
+            "contractDate": "2025-08-10",
+            "cancelled": false,
+            "dataMode": "demo",
+            "floor": 0
+          },
+          {
+            "key": "A-post-1",
+            "complexName": "A",
+            "exclusiveAreaM2": 84,
+            "priceKrw": 100800000,
+            "contractDate": "2025-08-11",
+            "cancelled": false,
+            "dataMode": "demo",
+            "floor": 1
+          },
+          {
+            "key": "A-post-2",
+            "complexName": "A",
+            "exclusiveAreaM2": 84,
+            "priceKrw": 100800000,
+            "contractDate": "2025-08-12",
+            "cancelled": false,
+            "dataMode": "demo",
+            "floor": 2
+          },
+          {
+            "key": "B-pre-0",
+            "complexName": "B",
+            "exclusiveAreaM2": 84,
+            "priceKrw": 84000000,
+            "contractDate": "2025-06-10",
+            "cancelled": false,
+            "dataMode": "demo",
+            "floor": 0
+          },
+          {
+            "key": "B-pre-1",
+            "complexName": "B",
+            "exclusiveAreaM2": 84,
+            "priceKrw": 84000000,
+            "contractDate": "2025-06-11",
+            "cancelled": false,
+            "dataMode": "demo",
+            "floor": 1
+          },
+          {
+            "key": "B-pre-2",
+            "complexName": "B",
+            "exclusiveAreaM2": 84,
+            "priceKrw": 84000000,
+            "contractDate": "2025-06-12",
+            "cancelled": false,
+            "dataMode": "demo",
+            "floor": 2
+          },
+          {
+            "key": "B-post-0",
+            "complexName": "B",
+            "exclusiveAreaM2": 84,
+            "priceKrw": 92400000.00000001,
+            "contractDate": "2025-08-10",
+            "cancelled": false,
+            "dataMode": "demo",
+            "floor": 0
+          },
+          {
+            "key": "B-post-1",
+            "complexName": "B",
+            "exclusiveAreaM2": 84,
+            "priceKrw": 92400000.00000001,
+            "contractDate": "2025-08-11",
+            "cancelled": false,
+            "dataMode": "demo",
+            "floor": 1
+          },
+          {
+            "key": "B-post-2",
+            "complexName": "B",
+            "exclusiveAreaM2": 84,
+            "priceKrw": 92400000.00000001,
+            "contractDate": "2025-08-12",
+            "cancelled": false,
+            "dataMode": "demo",
+            "floor": 2
+          }
+        ],
+        "complexInfo": [],
+        "attachments": [],
+        "dataLog": [],
+        "collections": [],
+        "observation": {
+          "eventKey": "ev",
+          "milestoneKey": "ms",
+          "months": 6,
+          "impact": [
+            "N:A|||"
+          ],
+          "control": [
+            "N:B|||"
+          ]
+        }
+      },
+      "runs": [
+        {
+          "runNo": 1,
+          "at": "2026-11-19T10:59:31.329+09:00",
+          "trigger": "manual",
+          "inputHash": "df7e13dc3aa685bb4e43261a7f263d7412b6aa1885cf0f755c61d771c199bca1",
+          "input": {
+            "asOf": "2026-11-01",
+            "property": {
+              "address": "가상 시험",
+              "exclusiveAreaM2": 84
+            },
+            "reviewPrice": null,
+            "schedule": {},
+            "options": {
+              "comparisonMonthsBefore": 24,
+              "comparisonMonthsAfter": 24,
+              "recentMonths": 12,
+              "areaBandPct": 15,
+              "radiusM": 1500,
+              "buildYearBand": 10,
+              "minComplexTrades": 3,
+              "minSample": 3
+            },
+            "events": [
+              {
+                "key": "ev",
+                "name": "가상 사건",
+                "category": "transport",
+                "direction": "unknown",
+                "dataMode": "demo",
+                "evidenceKeys": [],
+                "milestones": [
+                  {
+                    "key": "ms",
+                    "type": "opening",
+                    "status": "actual",
+                    "date": "2025-07-15",
+                    "evidenceKeys": []
+                  }
+                ]
+              }
+            ],
+            "evidence": [],
+            "transactions": [
+              {
+                "key": "A-pre-0",
+                "complexName": "A",
+                "exclusiveAreaM2": 84,
+                "priceKrw": 84000000,
+                "contractDate": "2025-06-10",
+                "cancelled": false,
+                "dataMode": "demo",
+                "floor": 0
+              },
+              {
+                "key": "A-pre-1",
+                "complexName": "A",
+                "exclusiveAreaM2": 84,
+                "priceKrw": 84000000,
+                "contractDate": "2025-06-11",
+                "cancelled": false,
+                "dataMode": "demo",
+                "floor": 1
+              },
+              {
+                "key": "A-pre-2",
+                "complexName": "A",
+                "exclusiveAreaM2": 84,
+                "priceKrw": 84000000,
+                "contractDate": "2025-06-12",
+                "cancelled": false,
+                "dataMode": "demo",
+                "floor": 2
+              },
+              {
+                "key": "A-post-0",
+                "complexName": "A",
+                "exclusiveAreaM2": 84,
+                "priceKrw": 100800000,
+                "contractDate": "2025-08-10",
+                "cancelled": false,
+                "dataMode": "demo",
+                "floor": 0
+              },
+              {
+                "key": "A-post-1",
+                "complexName": "A",
+                "exclusiveAreaM2": 84,
+                "priceKrw": 100800000,
+                "contractDate": "2025-08-11",
+                "cancelled": false,
+                "dataMode": "demo",
+                "floor": 1
+              },
+              {
+                "key": "A-post-2",
+                "complexName": "A",
+                "exclusiveAreaM2": 84,
+                "priceKrw": 100800000,
+                "contractDate": "2025-08-12",
+                "cancelled": false,
+                "dataMode": "demo",
+                "floor": 2
+              },
+              {
+                "key": "B-pre-0",
+                "complexName": "B",
+                "exclusiveAreaM2": 84,
+                "priceKrw": 84000000,
+                "contractDate": "2025-06-10",
+                "cancelled": false,
+                "dataMode": "demo",
+                "floor": 0
+              },
+              {
+                "key": "B-pre-1",
+                "complexName": "B",
+                "exclusiveAreaM2": 84,
+                "priceKrw": 84000000,
+                "contractDate": "2025-06-11",
+                "cancelled": false,
+                "dataMode": "demo",
+                "floor": 1
+              },
+              {
+                "key": "B-pre-2",
+                "complexName": "B",
+                "exclusiveAreaM2": 84,
+                "priceKrw": 84000000,
+                "contractDate": "2025-06-12",
+                "cancelled": false,
+                "dataMode": "demo",
+                "floor": 2
+              },
+              {
+                "key": "B-post-0",
+                "complexName": "B",
+                "exclusiveAreaM2": 84,
+                "priceKrw": 92400000.00000001,
+                "contractDate": "2025-08-10",
+                "cancelled": false,
+                "dataMode": "demo",
+                "floor": 0
+              },
+              {
+                "key": "B-post-1",
+                "complexName": "B",
+                "exclusiveAreaM2": 84,
+                "priceKrw": 92400000.00000001,
+                "contractDate": "2025-08-11",
+                "cancelled": false,
+                "dataMode": "demo",
+                "floor": 1
+              },
+              {
+                "key": "B-post-2",
+                "complexName": "B",
+                "exclusiveAreaM2": 84,
+                "priceKrw": 92400000.00000001,
+                "contractDate": "2025-08-12",
+                "cancelled": false,
+                "dataMode": "demo",
+                "floor": 2
+              }
+            ],
+            "complexInfo": [],
+            "attachments": [],
+            "dataLog": [],
+            "collections": [],
+            "observation": {
+              "eventKey": "ev",
+              "milestoneKey": "ms",
+              "months": 6,
+              "impact": [
+                "N:A|||"
+              ],
+              "control": [
+                "N:B|||"
+              ]
+            }
+          },
+          "result": {
+            "engineVersion": "0.2.0",
+            "inputHash": "df7e13dc3aa685bb4e43261a7f263d7412b6aa1885cf0f755c61d771c199bca1",
+            "asOf": "2026-11-01",
+            "missing": [
+              {
+                "field": "property.coordinates",
+                "label": "본건 좌표",
+                "affects": "비교단지·입지 사건까지 거리(주소 자동 변환 미설정 시 직접 입력)"
+              },
+              {
+                "field": "reviewPrice",
+                "label": "검토가격",
+                "affects": "검토가격과 실거래 비교(시세 수준만 표시)"
+              }
+            ],
+            "property": {
+              "address": "가상 시험",
+              "exclusiveAreaM2": 84,
+              "exclusivePyeong": 25.41,
+              "buildYear": null,
+              "coordinatesText": "좌표 미입력"
+            },
+            "events": [
+              {
+                "key": "ev",
+                "name": "가상 사건",
+                "category": "transport",
+                "categoryLabel": "교통",
+                "direction": "unknown",
+                "dataMode": "demo",
+                "stageAsOf": "개통·개장·준공 완료",
+                "cancelled": false,
+                "announcement": null,
+                "initialTarget": {
+                  "raw": "2025-07-15",
+                  "precision": "day",
+                  "y": 2025,
+                  "m": 7,
+                  "d": 15
+                },
+                "expectedTarget": {
+                  "raw": "2025-07-15",
+                  "precision": "day",
+                  "y": 2025,
+                  "m": 7,
+                  "d": 15
+                },
+                "expectedTargetStatus": "actual",
+                "delayCount": 0,
+                "timeline": [
+                  {
+                    "key": "ms",
+                    "type": "개통·개장·준공",
+                    "status": "실제",
+                    "date": "2025-07-15",
+                    "announcedOn": "미입력",
+                    "collectedOn": "미입력",
+                    "knownAsOf": true
+                  }
+                ],
+                "excludedAfterAsOf": 0,
+                "undatedKnowledge": 1,
+                "scheduleGaps": [],
+                "access": {
+                  "straightDistanceM": null,
+                  "walkMinutes": null,
+                  "text": "직선거리 미산출(좌표 부족) · 보행 경로 자료 없음 — 보행시간 미산출"
+                },
+                "evidence": {
+                  "total": 0,
+                  "byStatus": {
+                    "confirmed": 0,
+                    "needsApplicability": 0,
+                    "inconsistent": 0,
+                    "hardToVerify": 0
+                  },
+                  "levels": {
+                    "userInput": 0,
+                    "sourceCited": 0,
+                    "originalChecked": 0
+                  },
+                  "originalChecked": false,
+                  "afterAsOf": 0,
+                  "text": "근거 미기록"
+                },
+                "prepricing": {
+                  "text": "발표일 미확인 — 선반영 검토 불가",
+                  "assessment": "notApplicable",
+                  "shareAfter": null,
+                  "quantification": "정량 분리 어려움"
+                }
+              }
+            ],
+            "market": {
+              "recentWindow": {
+                "start": "2025-12",
+                "end": "2026-11",
+                "months": 12
+              },
+              "areaFilter": {
+                "minM2": 71.39999999999999,
+                "maxM2": 96.6
+              },
+              "complexes": [
+                {
+                  "complexKey": "N:A|||",
+                  "name": "A",
+                  "buildYear": null,
+                  "buildYearSource": "없음",
+                  "distanceM": null,
+                  "distanceSource": "없음",
+                  "recentTrades": 0,
+                  "recentAreaMin": null,
+                  "recentAreaMax": null,
+                  "stats": {
+                    "count": 0,
+                    "complexes": 0,
+                    "medianPerM2": null,
+                    "meanPerM2": null,
+                    "p25PerM2": null,
+                    "p75PerM2": null,
+                    "minPerM2": null,
+                    "maxPerM2": null
+                  },
+                  "latestTrade": null,
+                  "status": "excluded",
+                  "reasons": [
+                    "최근 12개월 유사면적 거래 없음",
+                    "본건 좌표 없음 — 거리 계산 불가",
+                    "준공연도 미확인"
+                  ],
+                  "selectionReason": "",
+                  "identityBasis": "단지명+추가 식별정보 없음",
+                  "sameNameCount": 1,
+                  "samples": {
+                    "total": 6,
+                    "cancelled": 0,
+                    "inWindow": 0,
+                    "areaMatched": 0
+                  },
+                  "differences": {
+                    "buildYearDiff": null,
+                    "distanceM": null,
+                    "areaDiffM2": null
+                  },
+                  "dataModes": [
+                    "demo"
+                  ],
+                  "sources": [
+                    "가상 자료"
+                  ]
+                },
+                {
+                  "complexKey": "N:B|||",
+                  "name": "B",
+                  "buildYear": null,
+                  "buildYearSource": "없음",
+                  "distanceM": null,
+                  "distanceSource": "없음",
+                  "recentTrades": 0,
+                  "recentAreaMin": null,
+                  "recentAreaMax": null,
+                  "stats": {
+                    "count": 0,
+                    "complexes": 0,
+                    "medianPerM2": null,
+                    "meanPerM2": null,
+                    "p25PerM2": null,
+                    "p75PerM2": null,
+                    "minPerM2": null,
+                    "maxPerM2": null
+                  },
+                  "latestTrade": null,
+                  "status": "excluded",
+                  "reasons": [
+                    "최근 12개월 유사면적 거래 없음",
+                    "본건 좌표 없음 — 거리 계산 불가",
+                    "준공연도 미확인"
+                  ],
+                  "selectionReason": "",
+                  "identityBasis": "단지명+추가 식별정보 없음",
+                  "sameNameCount": 1,
+                  "samples": {
+                    "total": 6,
+                    "cancelled": 0,
+                    "inWindow": 0,
+                    "areaMatched": 0
+                  },
+                  "differences": {
+                    "buildYearDiff": null,
+                    "distanceM": null,
+                    "areaDiffM2": null
+                  },
+                  "dataModes": [
+                    "demo"
+                  ],
+                  "sources": [
+                    "가상 자료"
+                  ]
+                }
+              ],
+              "comparables": [],
+              "needsCheck": [],
+              "pooled": {
+                "count": 0,
+                "complexes": 0,
+                "medianPerM2": null,
+                "meanPerM2": null,
+                "p25PerM2": null,
+                "p75PerM2": null,
+                "minPerM2": null,
+                "maxPerM2": null
+              },
+              "sampleRange": {
+                "certain": 0,
+                "min": 0,
+                "max": 0,
+                "uncertainGroups": 0
+              },
+              "excludedTrades": {
+                "최근 12개월 이전": 12
+              },
+              "validTrades": 12,
+              "txRows": [
+                {
+                  "key": "A-pre-0",
+                  "complexKey": "N:A|||",
+                  "included": false,
+                  "reasons": [
+                    "최근 12개월 이전"
+                  ],
+                  "perM2": 1000000
+                },
+                {
+                  "key": "A-pre-1",
+                  "complexKey": "N:A|||",
+                  "included": false,
+                  "reasons": [
+                    "최근 12개월 이전"
+                  ],
+                  "perM2": 1000000
+                },
+                {
+                  "key": "A-pre-2",
+                  "complexKey": "N:A|||",
+                  "included": false,
+                  "reasons": [
+                    "최근 12개월 이전"
+                  ],
+                  "perM2": 1000000
+                },
+                {
+                  "key": "A-post-0",
+                  "complexKey": "N:A|||",
+                  "included": false,
+                  "reasons": [
+                    "최근 12개월 이전"
+                  ],
+                  "perM2": 1200000
+                },
+                {
+                  "key": "A-post-1",
+                  "complexKey": "N:A|||",
+                  "included": false,
+                  "reasons": [
+                    "최근 12개월 이전"
+                  ],
+                  "perM2": 1200000
+                },
+                {
+                  "key": "A-post-2",
+                  "complexKey": "N:A|||",
+                  "included": false,
+                  "reasons": [
+                    "최근 12개월 이전"
+                  ],
+                  "perM2": 1200000
+                },
+                {
+                  "key": "B-pre-0",
+                  "complexKey": "N:B|||",
+                  "included": false,
+                  "reasons": [
+                    "최근 12개월 이전"
+                  ],
+                  "perM2": 1000000
+                },
+                {
+                  "key": "B-pre-1",
+                  "complexKey": "N:B|||",
+                  "included": false,
+                  "reasons": [
+                    "최근 12개월 이전"
+                  ],
+                  "perM2": 1000000
+                },
+                {
+                  "key": "B-pre-2",
+                  "complexKey": "N:B|||",
+                  "included": false,
+                  "reasons": [
+                    "최근 12개월 이전"
+                  ],
+                  "perM2": 1000000
+                },
+                {
+                  "key": "B-post-0",
+                  "complexKey": "N:B|||",
+                  "included": false,
+                  "reasons": [
+                    "최근 12개월 이전"
+                  ],
+                  "perM2": 1100000.0000000002
+                },
+                {
+                  "key": "B-post-1",
+                  "complexKey": "N:B|||",
+                  "included": false,
+                  "reasons": [
+                    "최근 12개월 이전"
+                  ],
+                  "perM2": 1100000.0000000002
+                },
+                {
+                  "key": "B-post-2",
+                  "complexKey": "N:B|||",
+                  "included": false,
+                  "reasons": [
+                    "최근 12개월 이전"
+                  ],
+                  "perM2": 1100000.0000000002
+                }
+              ],
+              "dataModes": [
+                "demo"
+              ],
+              "sources": [
+                "가상 자료"
+              ]
+            },
+            "price": {
+              "reviewPerM2": null,
+              "reviewPerPyeong": null,
+              "comparableMedianPerM2": null,
+              "comparableRange": null,
+              "diffPct": null,
+              "position": null,
+              "status": "held",
+              "reason": "검토가격 미입력",
+              "reviewText": "미입력",
+              "basisDate": "-",
+              "text": "가격 판단 보류 — 검토가격 미입력. 시세 수준: 비교 가능한 거래 없음"
+            },
+            "observed": {
+              "status": "notComputed",
+              "anchor": "-",
+              "window": "-",
+              "pre": {
+                "count": 0,
+                "complexes": 0,
+                "medianPerM2": null,
+                "meanPerM2": null,
+                "p25PerM2": null,
+                "p75PerM2": null,
+                "minPerM2": null,
+                "maxPerM2": null
+              },
+              "post": {
+                "count": 0,
+                "complexes": 0,
+                "medianPerM2": null,
+                "meanPerM2": null,
+                "p25PerM2": null,
+                "p75PerM2": null,
+                "minPerM2": null,
+                "maxPerM2": null
+              },
+              "changePct": null,
+              "text": "관찰된 변화: 발표일이 확인된 입지 사건이 없어 전후 비교 안 함"
+            },
+            "supply": {
+              "rows": [],
+              "window": "기준일 이후 36개월(2026-11~2029-11, 본건 일정 미입력)",
+              "overlappingHouseholds": 0,
+              "text": "입력된 주변 입주 물량 없음"
+            },
+            "excludedEvents": [],
+            "collection": null,
+            "causalEffect": {
+              "status": "notEstimated",
+              "text": "미추정 — 검증된 통계 모델을 적용하지 않아 입지 변화의 인과적 가격효과를 추정하지 않음"
+            },
+            "flags": [
+              {
+                "level": "high",
+                "area": "location",
+                "text": "가상 사건: 공식 원문 대조 기록 없음(근거 미기록)"
+              },
+              {
+                "level": "high",
+                "area": "price",
+                "text": "비교 가능한 단지 없음(거래 표본·면적·거리·준공연도 기준 미충족)"
+              },
+              {
+                "level": "high",
+                "area": "price",
+                "text": "본건 좌표 없음 — 거리를 확인할 수 없어 반경 내 대표 비교단지를 선정하지 못함(사용자가 거리를 입력한 단지만 가능)"
+              },
+              {
+                "level": "high",
+                "area": "data",
+                "text": "가상 자료가 포함됨 — 실제 판단에 사용 불가"
+              },
+              {
+                "level": "low",
+                "area": "data",
+                "text": "가상 사건: 발표일·수집일 없는 일정 1건"
+              },
+              {
+                "level": "low",
+                "area": "location",
+                "text": "입지 사건은 모두 사용자 입력임(입지 뉴스·고시 자동 수집 기능 없음)"
+              }
+            ],
+            "summary": {
+              "location": [
+                {
+                  "key": "ev",
+                  "text": "[교통] 가상 사건 — 개통·개장·준공 완료, 완료 2025-07-15",
+                  "detail": "근거 미기록 · 직선거리 미산출(좌표 부족) · 보행 경로 자료 없음 — 보행시간 미산출 · 가상 자료"
+                }
+              ],
+              "price": {
+                "comparison": "가격 판단 보류 — 검토가격 미입력. 시세 수준: 비교 가능한 거래 없음",
+                "comparables": "반경 내 거리 확인된 비교 가능 단지 없음 — 대표 비교단지를 억지로 채우지 않음",
+                "observed": "관찰된 변화: 발표일이 확인된 입지 사건이 없어 전후 비교 안 함",
+                "prepricing": "선반영: 검토할 발표일 자료 없음",
+                "causal": "인과 추정 효과: 미추정",
+                "basis": "기준일 2026-11-01 · 금액 만원 · 면적 전용㎡ · 출처 가상 자료"
+              },
+              "uncertainties": [
+                {
+                  "level": "high",
+                  "area": "location",
+                  "text": "가상 사건: 공식 원문 대조 기록 없음(근거 미기록)"
+                },
+                {
+                  "level": "high",
+                  "area": "price",
+                  "text": "비교 가능한 단지 없음(거래 표본·면적·거리·준공연도 기준 미충족)"
+                },
+                {
+                  "level": "high",
+                  "area": "price",
+                  "text": "본건 좌표 없음 — 거리를 확인할 수 없어 반경 내 대표 비교단지를 선정하지 못함(사용자가 거리를 입력한 단지만 가능)"
+                },
+                {
+                  "level": "high",
+                  "area": "data",
+                  "text": "가상 자료가 포함됨 — 실제 판단에 사용 불가"
+                }
+              ]
+            }
+          }
+        }
+      ],
+      "versions": []
+    }
+  ]
+}

@@ -15,7 +15,7 @@ before(async () => {
   app = createApp(loadConfig({ DB_PATH: join(mkdtempSync(join(tmpdir(), "la-v05-")), "k.db"), WEB_ROOT: "dist/web", MOLIT_SERVICE_KEY: "fake", KAKAO_REST_KEY: "fake", PUBLIC_DATA_MAX_MONTHS: "1" } as any),
     { logger: () => {}, publicDataDeps: { lookup: (_h, cb) => cb(null, [{ address: "203.0.113.10", family: 4 }]), transport: mockTransport } });
   await new Promise<void>((r) => app.server.listen(PORT, "127.0.0.1", r));
-  browser = await chromium.launch();
+  browser = await chromium.launch({ executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
 });
 after(async () => { mockState.delayMs = 0; await browser.close(); await app.close(); });
 

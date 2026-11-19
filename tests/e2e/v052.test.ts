@@ -15,7 +15,7 @@ before(async () => {
   dir = mkdtempSync(join(tmpdir(), "la-v052-"));
   app = createApp(loadConfig({ DB_PATH: join(dir, "a.db"), WEB_ROOT: "dist/web" } as any), { logger: () => {} });
   await new Promise<void>((r) => app.server.listen(PORT, "127.0.0.1", r));
-  browser = await chromium.launch();
+  browser = await chromium.launch({ executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
 });
 after(async () => { await browser.close(); await app.close(); });
 

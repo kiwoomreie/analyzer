@@ -1,3 +1,4 @@
+import { ObservationPanel } from "./ObservationPanel.tsx";
 import { useRef, useState } from "react";
 import { Badge, ModeBadge, MonthlyBars, Num, Section, Select, Text, download } from "../components.tsx";
 import { demoWorking } from "../../shared/demo.ts";
@@ -209,16 +210,7 @@ export function MarketSection({ rec, getRec, update, setRec, session }: SectionP
       <h4>대표 비교단지 최근 거래 건수(월별)</h4>
       <MonthlyBars data={[...monthly].map(([month, n]) => ({ month, target: n, comparator: 0 }))} single />
 
-      <h4>입지 사건 전후 관찰 <span className="muted small">대표 비교단지의 유사면적 거래 · 인과효과 아님</span></h4>
-      <table className="tbl small">
-        <thead><tr><th>기준</th><th>기간</th><th>구분</th><th>건수</th><th>중위 단가/전용㎡</th><th>사분위</th></tr></thead>
-        <tbody>
-          <tr><td rowSpan={2}>{r!.observed.anchor}</td><td rowSpan={2}>{r!.observed.window}</td><td>발표 전</td><td>{r!.observed.pre.count}</td><StatCells s={r!.observed.pre} /></tr>
-          <tr><td>발표 후</td><td>{r!.observed.post.count}</td><StatCells s={r!.observed.post} /></tr>
-        </tbody>
-      </table>
-      <p className="small">{r!.observed.text}</p>
-      {r!.events.filter((e) => e.prepricing).map((e) => <p key={e.key} className="small"><b>{e.name} 선반영</b>: {e.prepricing!.text}</p>)}
+      <ObservationPanel rec={rec} update={update} />
 
       <h4>거래 내역(현재 입력) <span className="muted small">출처: {[...new Set(w.transactions.map((t) => t.source ?? "미기재"))].slice(0, 4).join(", ") || "없음"}</span></h4>
       <div className="toolbar small">

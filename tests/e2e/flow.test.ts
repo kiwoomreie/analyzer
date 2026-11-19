@@ -25,7 +25,7 @@ before(async () => {
   keyed = createApp(loadConfig({ DB_PATH: join(dir, "k.db"), WEB_ROOT: "dist/web", MOLIT_SERVICE_KEY: "fake", KAKAO_REST_KEY: "fake" } as any), { logger: () => {}, publicDataDeps: { lookup: (_h, cb) => cb(null, [{ address: "203.0.113.10", family: 4 }]), transport: mockTransport } });
   await new Promise<void>((r) => keyed.server.listen(KEYED_PORT, "127.0.0.1", r));
   harness = startHarness({ port: HARNESS_PORT, launchUrl: `${APP}/launch`, allowLocalhost: true });
-  browser = await chromium.launch();
+  browser = await chromium.launch({ executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
 });
 after(async () => { await browser.close(); harness.server.close(); await app.close(); await keyed.close(); });
 

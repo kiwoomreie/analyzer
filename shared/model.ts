@@ -224,6 +224,7 @@ export interface AttachmentMeta {
 }
 
 export interface WorkingInputs {
+  observation?: import("./observation.ts").ObservationOptions;
   asOf: string;
   property: {
     address: string;
@@ -422,6 +423,7 @@ export function migrateWorking(w: WorkingInputs): WorkingInputs {
   }
   w.collections = (w.collections ?? []).map(migrateCollection);
   w.dataLog ??= [];
+  // v0.6 observation defaults are resolved lazily to preserve old snapshot hashes.
   return w;
 }
 
