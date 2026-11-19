@@ -112,5 +112,10 @@ export function demoWorking(): WorkingInputs {
   w.transactions = tx;
   w.complexInfo = info;
   w.dataLog = [{ at: C, source: "[가상] 데모", detail: "가상 단지 8곳 거래·입지 사건 5건 생성" }];
+  // [가상] 수동 확인 영향권·비교군 예시: 가람선 기본계획 고시(실제 일정 2024-02-20) 전후 12개월
+  const key = (n: string) => { const c = COMPLEXES.find((x) => x[0] === n)!; return complexKeyOf({ complexName: c[0], dong: c[1] }); };
+  w.observation = { eventKey: "ev_rail", milestoneKey: "m2", months: 12,
+    impact: ["[가상] 가람마을 1단지", "[가상] 가람마을 2단지", "[가상] 누리숲 아파트"].map(key),
+    control: ["[가상] 동편마을 A", "[가상] 은빛마을"].map(key) };
   return w;
 }

@@ -87,8 +87,8 @@ export function InputSection({ rec, update }: SectionProps) {
       <h4>최초 입력과 현재 작업본 비교 <span className="muted small">({diff.length}개 항목)</span></h4>
       {!diff.length ? <p className="muted small">변경 없음</p> : (
         <details><summary className="small">변경 항목 보기</summary>
-          <table className="tbl small" data-testid="diff-table"><thead><tr><th>항목</th><th>최초</th><th>현재</th></tr></thead>
-            <tbody>{diff.slice(0, 80).map((d) => <tr key={d.path}><td><code>{d.path}</code></td><td>{d.before}</td><td>{d.after}</td></tr>)}</tbody></table>
+          <div className="table-scroll"><table className="tbl small" data-testid="diff-table"><thead><tr><th>항목</th><th>최초</th><th>현재</th></tr></thead>
+            <tbody>{diff.slice(0, 80).map((d) => <tr key={d.path}><td><code>{d.path}</code></td><td>{d.before}</td><td>{d.after}</td></tr>)}</tbody></table></div>
         </details>
       )}
     </Section>

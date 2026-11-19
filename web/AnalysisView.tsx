@@ -3,6 +3,7 @@ import { deleteTemp, getTemp, putTemp, type SessionInfo } from "./api.ts";
 import { draftStore, localStore, memoryDrafts } from "./store.ts";
 import { latestRun, navigate, withRun } from "./nav.ts";
 import { Badge, download, openSection, Rail } from "./components.tsx";
+import { currentPriceView, observationView } from "../shared/priceView.ts";
 import { DATA_MODE_LABEL, migrateRecord, newKey, ORIGIN_LABEL, titleFor, type AnalysisRecord, type WorkingInputs } from "../shared/model.ts";
 import { makeBackup, scanWorking } from "../shared/importers.ts";
 import { seoulNowIso, seoulToday } from "../shared/dates.ts";
@@ -109,6 +110,8 @@ export function AnalysisView({ storage, recKey, session }: { storage: StorageKin
   if (!rec || !lr?.run || !lr.result) return <main className="home"><p className="muted">불러오는 중…</p></main>;
   const lastRun = lr.run;
   const r = lr.result;
+  const pv = currentPriceView(lr.input, r);
+  const ov = observationView(r.groupObservation);
   const stale = lr.stale;
 
   /** 저장 대기분 취소(삭제·다른 저장소로 옮긴 뒤 화면을 떠날 때 옛 위치에 다시 쓰지 않도록) */
@@ -195,10 +198,28 @@ export function AnalysisView({ storage, recKey, session }: { storage: StorageKin
         </div>
         <div className="card sblock" data-testid="summary-price">
           <p className="step-eyebrow">02</p><h2>가격 영향과 근거 {stale && <Badge tone="bad">이전 결과</Badge>}</h2>
-          <dl className="kv">
+          <h3 className="sub-h">현재 검토가격 비교</h3>
+          <dl className="kv" data-testid="price-current">
+            <dt>검토가격</dt><dd>{lr.input.reviewPrice ? <>{pv.review.status === "held" && <Badge tone="muted">보류</Badge>} 세대당 총액 {pv.review.household} · {pv.review.perPyeong}<div className="muted small">{pv.review.perM2} · {pv.review.label} · 기준일 {pv.review.basisDate}{pv.review.note ? ` — ${pv.review.note}` : ""}</div></> : <><Badge tone="muted">미입력</Badge> <span className="small">검토가격이 없어 가격 비교만 보류</span></>}</dd>
+            <dt>인근 유사 거래</dt><dd>{pv.market.complexes ? <>대표 비교단지 {pv.market.complexes}곳(최대 5곳, 부족해도 채우지 않음) · {pv.market.count}건 중위 {pv.market.perPyeong}<div className="muted small">{pv.market.perM2} · 세대당 환산 {pv.market.householdEquiv} · 단지별 중위 범위 {pv.market.range} · {pv.market.window} · {pv.market.area}</div></> : <span className="small">조건에 맞는 대표 비교단지 없음 — 거리 확인·거래 수·면적·준공연도 기준을 충족한 단지가 없어 채우지 않음 <span className="muted">({pv.market.window} · {pv.market.area})</span></span>}</dd>
             <dt>검토가격 비교</dt><dd data-testid="price-compare">{r.price.status === "held" ? <><Badge tone="muted">보류</Badge> {r.price.text.replace(/^가격 판단 보류 — /, "")}</> : r.price.text}</dd>
-            <dt>비교 근거</dt><dd>{r.summary.price.comparables}</dd>
-            <dt>관찰된 변화</dt><dd>{r.summary.price.observed.replace(/^관찰된 변화: ?/, "")}</dd>
+          </dl>
+          <p className="muted small">{pv.disclaimer}</p>
+          <h3 className="sub-h">입지 사건 전후 관측 {ov.demo && <Badge tone="bad">가상 자료</Badge>}</h3>
+          <div data-testid="obs-summary">
+            {!ov.configured ? (
+              <p className="small">영향권·비교군 미설정 — ‘실거래·비교단지 상세’에서 사건·실제 기준일·전후 기간·단지를 선택하고 분석을 다시 실행하십시오.<span className="muted"> 참고(대표 비교단지 발표 전후 단일값): {r.summary.price.observed.replace(/^관찰된 변화: ?/, "")}</span></p>
+            ) : (
+              <>
+                <p className="small muted">{ov.headline}</p>
+                <ul className="obs-lines"><li>{ov.impact}</li><li>{ov.control}</li></ul>
+                {ov.difference ? <p className="obs-diff" data-testid="obs-diff"><b>{ov.difference}</b> <span className="muted small">(인과효과 아님 · 관측된 차이)</span></p>
+                  : <p className="small warn-text" data-testid="obs-diff-hidden">유효한 비교가 아니어서 비교군 대비 차이를 표시하지 않습니다.</p>}
+                {ov.flags.length > 0 && <ul className="obs-flags small" data-testid="obs-flags">{ov.flags.map((f, i) => <li key={i}>{f}</li>)}</ul>}
+              </>
+            )}
+          </div>
+          <dl className="kv">
             <dt>선반영</dt><dd>{r.summary.price.prepricing}</dd>
             <dt>인과 추정 효과</dt><dd><Badge tone="muted">미추정</Badge></dd>
           </dl>

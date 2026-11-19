@@ -22,7 +22,7 @@ test('v0.6 수동 비교·기간·그룹 중복·저장 재열기·모바일',as
  await page.waitForSelector('[data-testid=obs-results]');
  assert.match(await page.locator('[data-testid=obs-difference]').innerText(),/10\.0%p/);
  for(const n of ['3','12','6']){await page.selectOption('[data-testid=obs-months]',n);assert.match(await page.locator('[data-testid=obs-difference]').innerText(),/10\.0%p/);}
- const box=page.getByRole('checkbox',{name:'A 비교군',exact:true});await box.check();assert.match(await page.locator('[data-testid=obs-warnings]').innerText(),/그룹 중복/);assert.match(await page.locator('[data-testid=obs-difference]').innerText(),/미산출/);await box.uncheck();
+ const box=page.getByRole('checkbox',{name:'A 비교군',exact:true});await box.check();assert.match(await page.locator('[data-testid=obs-warnings]').innerText(),/그룹 중복/);assert.match(await page.locator('[data-testid=obs-difference]').innerText(),/비교 불가/);await box.uncheck();
  await page.waitForSelector('[data-testid=save-state]:has-text("이 브라우저에 저장됨")');await page.reload();await page.waitForSelector('[data-testid=summary]');if(await page.locator('#sec-market').getAttribute('open')===null)await page.locator('#sec-market > summary').click();assert.equal(await page.inputValue('[data-testid=obs-months]'),'6');assert.match(await page.locator('[data-testid=obs-difference]').innerText(),/10\.0%p/);
  await page.setViewportSize({width:390,height:844});assert.equal(await page.locator('[data-testid=observation-panel]').isVisible(),true);assert.deepEqual(errors,[]);
  } finally {await browser.close();await app.close();}

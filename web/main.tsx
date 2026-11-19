@@ -213,7 +213,7 @@ export function KeyLimits({ session }: { session: SessionInfo | null }) {
   return (
     <section className="card small" data-testid="key-limits">
       <h2>API 키가 없어 제한되는 기능 {!session && <span className="badge tone-warn">서버 없이 미리보기 중</span>}</h2>
-      <table className="tbl">
+      <div className="table-scroll"><table className="tbl">
         <thead><tr><th>기능</th><th>필요한 키</th><th>상태</th><th>대신 할 수 있는 방법</th></tr></thead>
         <tbody>
           <tr><td>주소 → 좌표 자동 변환</td><td>카카오 로컬(REST)</td><td>{kakao ? "설정됨" : "사용 불가"}</td><td>‘입력·세부 설정’에서 본건 좌표 직접 입력</td></tr>
@@ -222,7 +222,7 @@ export function KeyLimits({ session }: { session: SessionInfo | null }) {
           <tr><td>비교단지 좌표·거리 확인</td><td>카카오 로컬(REST)</td><td>{kakao ? "설정됨" : "사용 불가"}</td><td>‘실거래·비교단지 상세’에서 단지별 거리(m) 직접 입력 — 거리 미확인 단지는 대표 통계에서 제외</td></tr>
           <tr><td>지도 표시</td><td>카카오 지도(JavaScript)</td><td>{session?.config.kakaoJsKey ? "설정됨" : "좌표 도식으로 대체"}</td><td>번호 마커 도식(실제 지도 아님)</td></tr>
         </tbody>
-      </table>
+      </table></div>
       <p className="muted">분석·저장·보고서는 키 없이도 동작합니다. 입지 뉴스·고시 자동 수집 기능은 키와 무관하게 없습니다(사용자 입력).</p>
     </section>
   );

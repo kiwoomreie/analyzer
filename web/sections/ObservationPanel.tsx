@@ -44,7 +44,14 @@ export function ObservationPanel({rec, update}: Pick<SectionProps,'rec'|'update'
     {r.warnings.length > 0 && <ul className="small warn-text" data-testid="obs-warnings">{r.warnings.map((s,i)=><li key={i}>{s}</li>)}</ul>}
     <div className="table-scroll"><table className="tbl small" data-testid="obs-results"><thead><tr><th>그룹</th><th>양기간 단지/면적구간</th><th>전 표본</th><th>후 표본</th><th>전 중위(전용㎡)</th><th>후 중위(전용㎡)</th><th>관측 변동률</th></tr></thead><tbody>{(['impact','control'] as const).map(g=><tr key={g}><td>{g==='impact'?'영향권':'수동 확인 비교군'}</td><td>{r[g].complexes}/{r[g].strata}</td><td>{r[g].pre.count}건</td><td>{r[g].post.count}건</td><td>{fmtMan(r[g].pre.medianPerM2)}</td><td>{fmtMan(r[g].post.medianPerM2)}</td><td>{fmtPct(r[g].changePct)}</td></tr>)}</tbody></table></div>
     <p className="small muted" data-testid="obs-basis">분석 기준일 {r.basis.asOf} · 단위 {r.basis.unit} · 출처 {r.basis.sources.join(', ') || '해당 거래 없음'}{r.basis.dataModes.length ? ` · 자료 ${r.basis.dataModes.join('·')}` : ''}</p>
-    <p data-testid="obs-difference">영향권 − 비교군 변동률 차이: {fmtPp(r.differencePp)} (인과 효과 아님)</p>
+    <p data-testid="obs-difference">{r.valid && r.differencePp !== null ? <><b>비교군 대비 관측 차이 {fmtPp(r.differencePp)}</b> <span className="muted small">(인과효과 아님 · 관측된 차이)</span></> : <span className="warn-text">비교 불가 — 유효한 비교가 아니어서 비교군 대비 차이를 표시하지 않음(위 경고 참고)</span>}</p>
+    <details data-testid="obs-usage"><summary className="small">사용·제외 단지와 제외 이유 · 가격·면적 기준</summary>
+      <p className="small muted">가격 기준: 전용㎡당 거래가(원 단위 계산, 표시는 만원) · 면적 기준: {r.basis.area ? `본건 전용 ${r.basis.area.m2}㎡ ±${r.basis.area.bandPct}% (${r.basis.area.min.toFixed(1)}~${r.basis.area.max.toFixed(1)}㎡)` : '본건 전용면적 미입력'} · 같은 단지 × 전용면적 {r.basis.stratumM2}㎡ 구간에 전·후 양쪽 거래가 있는 표본만 사용 · 기간별 최소 {r.basis.minSample}건</p>
+      <div className="table-scroll"><table className="tbl small"><thead><tr><th>그룹</th><th>단지</th><th>사용</th><th>전/후 건수</th><th>면적구간</th><th>제외·미사용 이유</th></tr></thead><tbody>
+        {r.usage.map((u) => <tr key={u.group + u.key} className={u.used ? '' : 'excluded'}><td>{GROUP_LABEL[u.group]}</td><td className="name-cell">{u.label}</td><td>{u.used ? '사용' : '미사용'}</td><td>{u.pre}/{u.post}</td><td>{u.strata}</td><td className="wide-cell">{[u.reason, ...Object.entries(u.excluded).map(([k, n]) => `${k} ${n}건`)].filter(Boolean).join(' · ') || '-'}</td></tr>)}
+        {!r.usage.length && <tr><td colSpan={6} className="muted">선택한 단지 없음</td></tr>}
+      </tbody></table></div>
+    </details>
     <details data-testid="obs-notes"><summary className="small">계산 기준·한계(항상 적용) {r.notes.length}개</summary><ul className="small">{r.notes.map((s,i)=><li key={i}>{s}</li>)}</ul></details>
     <details><summary>월별 중위 단가 추이(만원/전용㎡) · 동일 분석 표본</summary><div className="table-scroll"><table className="tbl small"><thead><tr><th>월</th><th>영향권 중위/건수</th><th>비교군 중위/건수</th></tr></thead><tbody>{r.monthly.map(m=><tr key={m.month}><td>{m.month}</td><td>{fmtMan(m.impact)} / {m.impactN}건</td><td>{fmtMan(m.control)} / {m.controlN}건</td></tr>)}</tbody></table></div><p className="small">경계 월은 일부 날짜만 포함합니다. 거래 없는 달은 0원이 아닌 미산출로 표시합니다.</p></details>
   </div>;

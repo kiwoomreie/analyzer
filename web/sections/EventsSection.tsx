@@ -116,7 +116,7 @@ export function EventsSection({ rec, update, session }: SectionProps) {
             </div>
 
             <h4>일정 이력 <span className="muted small">발표일(알려진 날)·적용일(실행·예정일)·수집일을 구분. 최초 일정은 지우지 말고 ‘지연’ 항목으로 변경 이력을 추가</span></h4>
-            <table className="tbl small">
+            <div className="table-scroll"><table className="tbl small">
               <thead><tr><th>구분</th><th>예정/실제</th><th>적용일</th><th>발표일</th><th>수집일</th><th>메모</th><th>기준일 반영</th><th /></tr></thead>
               <tbody>
                 {ev.milestones.map((m, j) => (
@@ -132,7 +132,7 @@ export function EventsSection({ rec, update, session }: SectionProps) {
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </table></div>
             <button onClick={() => update((x) => { x.events[idx].milestones.push({ key: newKey("ms"), type: "announcement", status: "planned", collectedOn: seoulToday(), evidenceKeys: [] }); })} data-testid="add-milestone">일정 추가</button>
 
             {er && (
@@ -155,8 +155,8 @@ export function EventsSection({ rec, update, session }: SectionProps) {
 
       <h4>첨부 <span className="muted small">텍스트는 그대로 텍스트로만 표시 · HTML·스크립트·주소를 실행·조회하지 않음</span></h4>
       {!w.attachments.length ? <p className="muted small">첨부 없음</p> : (
-        <table className="tbl small"><thead><tr><th>파일</th><th>크기</th><th>SHA-256</th><th>본문</th><th /></tr></thead>
-          <tbody>{w.attachments.map((a, i) => <tr key={a.key}><td>{a.filename}</td><td>{a.size.toLocaleString("ko-KR")}B</td><td><code>{a.sha256.slice(0, 16)}…</code></td><td>{a.text ? <details><summary>보기</summary><pre className="plain">{a.text.slice(0, 5000)}</pre></details> : "보관 안 함"}</td><td><button className="link" onClick={() => update((x) => { x.attachments.splice(i, 1); })}>삭제</button></td></tr>)}</tbody></table>
+        <div className="table-scroll"><table className="tbl small"><thead><tr><th>파일</th><th>크기</th><th>SHA-256</th><th>본문</th><th /></tr></thead>
+          <tbody>{w.attachments.map((a, i) => <tr key={a.key}><td>{a.filename}</td><td>{a.size.toLocaleString("ko-KR")}B</td><td><code>{a.sha256.slice(0, 16)}…</code></td><td>{a.text ? <details><summary>보기</summary><pre className="plain">{a.text.slice(0, 5000)}</pre></details> : "보관 안 함"}</td><td><button className="link" onClick={() => update((x) => { x.attachments.splice(i, 1); })}>삭제</button></td></tr>)}</tbody></table></div>
       )}
     </Section>
   );
@@ -179,7 +179,7 @@ function EvidenceList({ rec, update, eventKey, eventIdx }: { rec: SectionProps["
   };
   return (
     <>
-      <table className="tbl small">
+      <div className="table-scroll"><table className="tbl small">
         <thead><tr><th>출처</th><th>발행일/자료 기준일/확인일</th><th>페이지·절</th><th>확인한 사실</th><th>기록 수준</th><th>내용 판단</th><th /></tr></thead>
         <tbody>
           {linked.map((e) => {
@@ -198,7 +198,7 @@ function EvidenceList({ rec, update, eventKey, eventIdx }: { rec: SectionProps["
           })}
           {!linked.length && <tr><td colSpan={7} className="muted">연결된 근거 없음</td></tr>}
         </tbody>
-      </table>
+      </table></div>
       <div className="card sub">
         <b className="small">근거 추가</b> <span className="muted small">직접 읽은 문서만 기록. ‘공식 원문 대조 기록’ 수준은 공공기관 원문 + 문서번호 또는 첨부 + 페이지·절 + 발행일 + ‘원문 직접 대조’ 표시가 모두 있어야 하며, 그래도 앱이 자동 검증한 것은 아닙니다.</span>
         <div className="form grid">

@@ -15,7 +15,7 @@ test("[2] 그룹 관측 설정이 있으면 실행 기록에 같은 입력 스�
   const md = reportSummary(rec, r);
   assert.match(md, /수동 확인 그룹 관측 \(실행 #1 입력 기준 · 인과효과 아님\)/);
   assert.match(md, /\| 영향권 \| 1\/1 \| 3건 \| 3건 \| 100만원 \| 120만원 \| 20\.0% \|/);
-  assert.match(md, /차이: \+10\.0%p/);
+  assert.match(md, /비교군 대비 관측 차이 \+10\.0%p/);
   assert.match(md, /영향권\(사용자 확인\): A · 비교군\(사용자 확인\): B/);
   assert.doesNotMatch(md, /N:A\|\|\|/, "내부 식별키 노출 금지");
   assert.match(md, /### E\. 수동 확인 그룹 월별/);
@@ -27,10 +27,10 @@ test("[2] 실행 후 그룹·기간을 바꿔도 보고서는 실행 당시 값 
   rec = { ...rec, working: { ...rec.working, observation: { ...rec.working.observation!, control: [] } } };
   const { result, stale } = latestRun(rec);
   assert.equal(stale, true);
-  assert.match(reportSummary(rec, result!), /차이: \+10\.0%p/);
+  assert.match(reportSummary(rec, result!), /비교군 대비 관측 차이 \+10\.0%p/);
   assert.equal(observeGroups(rec.working).differencePp, null);
   rec = withRun(rec, "manual");
-  assert.match(reportSummary(rec, latestRun(rec).result!), /차이: 미산출/);
+  assert.match(reportSummary(rec, latestRun(rec).result!), /비교군 대비 관측 차이: 표시 안 함 — 유효한 비교가 아님/);
 });
 
 test("[2] 그룹 관측 설정이 없으면 실행 결과에 넣지 않고, v0.6 이전 실행 기록은 보고서에 ‘설정 없음’ 한 줄", () => {

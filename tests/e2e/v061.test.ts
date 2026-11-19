@@ -60,7 +60,7 @@ test("기존 전후 관찰 표·새 그룹 패널 공존, 실행 기준 안내, 
   // 그룹 변경 → 실행 결과와 다름 안내, 보고서는 실행 #2 값 유지
   await page.getByRole("checkbox", { name: "B 비교군", exact: true }).uncheck();
   assert.match(await page.locator("[data-testid=obs-run-status]").innerText(), /마지막 분석 실행\(#2\) 결과와 다릅니다/);
-  assert.match(await page.locator("[data-testid=report-preview]").innerText(), /차이: \+10\.0%p/);
+  assert.match(await page.locator("[data-testid=report-preview]").innerText(), /비교군 대비 관측 차이 \+10\.0%p/);
   assert.deepEqual(errors, []);
   await ctx.close();
 });

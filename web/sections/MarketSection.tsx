@@ -169,16 +169,16 @@ export function MarketSection({ rec, getRec, update, setRec, session }: SectionP
       {lastCol && (
         <details className="sub-details" data-testid="collection-report" open={lastCol.trades.status !== "complete" || lastCol.regionDiscovery.status !== "sampled" || lastCol.complexGeocode.status !== "complete"}>
           <summary className="small">최근 공공 API 수집({lastCol.at.slice(0, 16).replace("T", " ")}) — 상태 3가지를 따로 표시</summary>
-          <table className="tbl small" data-testid="collection-status">
+          <div className="table-scroll"><table className="tbl small" data-testid="collection-status">
             <tbody>
               <tr><th>거래 응답 수집·건수 대사</th><td className={lastCol.trades.status === "complete" ? "" : "warn-text"}>거래 응답 수집·건수 대사: {TRADE_STATUS_LABEL[lastCol.trades.status]}</td><td>월 {lastCol.trades.monthsOk}/{lastCol.trades.monthsTotal}{lastCol.trades.capped ? " · 페이지 상한 도달" : ""} · {lastCol.trades.note}</td><td className="muted">미완료면 일부 거래 누락 → 단지별 표본·중위 단가와 대표 비교단지 선정이 달라질 수 있음</td></tr>
               <tr><th>주변 행정구역 탐색</th><td className={lastCol.regionDiscovery.status === "sampled" && !lastCol.regionDiscovery.capped ? "" : "warn-text"}>주변 행정구역 탐색: {REGION_STATUS_LABEL[lastCol.regionDiscovery.status]}</td><td>{lastCol.regionDiscovery.note}</td><td className="muted">빠진 시군구가 있으면 반경 안 단지가 누락돼 대표 비교단지가 가장 가까운 단지가 아닐 수 있음</td></tr>
               <tr><th>단지 좌표 확인</th><td className={lastCol.complexGeocode.status === "complete" ? "" : "warn-text"}>단지 좌표 확인: {GEOCODE_STATUS_LABEL[lastCol.complexGeocode.status]}</td><td>{lastCol.complexGeocode.located}/{lastCol.complexGeocode.total}곳{lastCol.complexGeocode.capped ? " · 상한 도달" : ""}</td><td className="muted">좌표 미확인 단지는 확인 필요 후보로 분리되어 대표 비교단지 선정에서 빠짐</td></tr>
             </tbody>
-          </table>
+          </table></div>
           <p className="small muted">{collectionStatusText(lastCol)}</p>
-          <table className="tbl small"><thead><tr><th>시군구</th><th>계약월</th><th>전체 건수</th><th>수집</th><th>페이지</th><th>대사</th></tr></thead>
-            <tbody>{lastCol.months.map((x, i) => <tr key={i}><td>{x.lawdCode}</td><td>{x.yearMonth}</td><td>{x.totalCount ?? "확인 불가"}</td><td>{x.collected}</td><td>{x.pagesFetched}/{x.pagesExpected ?? "?"}</td><td>{x.ok ? "일치" : <span className="warn-text">{x.error ?? "미완료"}</span>}</td></tr>)}</tbody></table>
+          <div className="table-scroll"><table className="tbl small"><thead><tr><th>시군구</th><th>계약월</th><th>전체 건수</th><th>수집</th><th>페이지</th><th>대사</th></tr></thead>
+            <tbody>{lastCol.months.map((x, i) => <tr key={i}><td>{x.lawdCode}</td><td>{x.yearMonth}</td><td>{x.totalCount ?? "확인 불가"}</td><td>{x.collected}</td><td>{x.pagesFetched}/{x.pagesExpected ?? "?"}</td><td>{x.ok ? "일치" : <span className="warn-text">{x.error ?? "미완료"}</span>}</td></tr>)}</tbody></table></div>
           {lastCol.notes.length > 0 && <ul className="small">{lastCol.notes.map((n, i) => <li key={i}>{n}</li>)}</ul>}
         </details>
       )}
@@ -214,13 +214,13 @@ export function MarketSection({ rec, getRec, update, setRec, session }: SectionP
       <MonthlyBars data={[...monthly].map(([month, n]) => ({ month, target: n, comparator: 0 }))} single />
 
       <h4>입지 사건 전후 관찰 {stale && <Badge tone="bad">이전 결과</Badge>} <span className="muted small">마지막 분석 실행 #{rec.runs[rec.runs.length - 1]?.runNo ?? "-"} 기준 · 대표 비교단지의 유사면적 거래 · 인과효과 아님</span></h4>
-      <table className="tbl small" data-testid="observed-table">
+      <div className="table-scroll"><table className="tbl small" data-testid="observed-table">
         <thead><tr><th>기준</th><th>기간</th><th>구분</th><th>건수</th><th>중위 단가/전용㎡</th><th>사분위</th></tr></thead>
         <tbody>
           <tr><td rowSpan={2}>{r!.observed.anchor}</td><td rowSpan={2}>{r!.observed.window}</td><td>발표 전</td><td>{r!.observed.pre.count}</td><StatCells s={r!.observed.pre} /></tr>
           <tr><td>발표 후</td><td>{r!.observed.post.count}</td><StatCells s={r!.observed.post} /></tr>
         </tbody>
-      </table>
+      </table></div>
       <p className="small">{r!.observed.text}</p>
       {r!.events.filter((e) => e.prepricing).map((e) => <p key={e.key} className="small" data-testid="prepricing-note"><b>{e.name} 선반영</b>: {e.prepricing!.text}</p>)}
 

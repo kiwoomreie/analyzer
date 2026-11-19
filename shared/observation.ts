@@ -45,6 +45,15 @@ export function reportLabelOf(key: string, list: Transaction[]): string {
   return clash ? `${labelOfComplexKey(key, list).name}(${labelOfComplexKey(key, list).detail})` : mine;
 }
 
+/** 선택 단지별 사용·제외 내역(상세 표시용). 계산 결과에는 영향 없음 */
+export interface ComplexUsage {
+  group: 'impact' | 'control'; key: string; label: string; used: boolean;
+  pre: number; post: number; strata: number;
+  reason?: string;
+  /** 이 단지 거래 중 관측에서 뺀 건수(사유별) */
+  excluded: Record<string, number>;
+}
+
 export interface MissingSelection { group: 'impact' | 'control'; key: string; label: ComplexLabel; similar: { key: string; label: ComplexLabel }[] }
 export type ObservationResult = ReturnType<typeof observeGroups>;
 
@@ -68,7 +77,17 @@ export function observeGroups(w: WorkingInputs) {
     missingSelections: [] as MissingSelection[],
     // 오래된 실행의 입력 스냅샷이 압축돼도 당시 선택 단지명을 재현한다.
     selectionLabels: Object.fromEntries((['impact', 'control'] as const).map(group => [group, o[group].map(key => reportLabelOf(key, w.transactions))])) as Record<'impact' | 'control', string[]>,
-    basis: { asOf: w.asOf, unit: '만원/전용㎡(원 단위 계산)', sources: [] as string[], dataModes: [] as string[] } };
+    basis: { asOf: w.asOf, unit: '만원/전용㎡(원 단위 계산)', sources: [] as string[], dataModes: [] as string[],
+      area: (w.property.exclusiveAreaM2 && Number.isFinite(w.options.areaBandPct)) ? { m2: w.property.exclusiveAreaM2, bandPct: w.options.areaBandPct, min: w.property.exclusiveAreaM2 * (1 - w.options.areaBandPct / 100), max: w.property.exclusiveAreaM2 * (1 + w.options.areaBandPct / 100) } : null,
+      stratumM2: 5, minSample: Math.max(3, w.options.minSample || 3) },
+    /** 선택 단지별 사용·제외 내역 */
+    usage: [] as ComplexUsage[],
+    /** 비교군 대비 관측 차이를 보여줄 수 있는지(두 그룹 변동률이 모두 산출되고 기준 정보가 유효할 때만) */
+    valid: false };
+  const stopUsage = (why: string) => {
+    for (const group of ['impact', 'control'] as const) for (const key of o[group]) result.usage.push({ group, key, label: reportLabelOf(key, w.transactions), used: false, pre: 0, post: 0, strata: 0, reason: result.overlap.includes(key) ? '영향권·비교군 양쪽에 선택 — 양쪽에서 제외' : !presentKeys.has(key) ? '현재 거래 자료에 없음(식별 정보 변경 또는 거래 삭제)' : `계산 안 함 — ${why}`, excluded: {} });
+    return result;
+  };
   // 선택했지만 현재 거래 자료에 없는 단지(식별 정보 변경·거래 삭제) — 조용히 0건이 되지 않도록 표시
   for (const group of ['impact', 'control'] as const) for (const key of o[group]) if (!presentKeys.has(key)) {
     const label = labelOfComplexKey(key);
@@ -88,10 +107,14 @@ export function observeGroups(w: WorkingInputs) {
   const selected = new Set([...o.impact, ...o.control].filter(k => presentKeys.has(k)));
   const unknown = [...selected].filter(k => !validObservationLocation(w.complexInfo.find(c => c.complexKey === k)?.location));
   if (unknown.length) warnings.push(`좌표 미확인 ${unknown.length}개 단지: 수동 확인의 공간적 타당성을 재확인하십시오.`);
-  if (!anchor || anchor.precision !== 'day' || !asOf || asOf.precision !== 'day') { warnings.push('기록된 실제 일정과 분석 기준일을 일 단위로 지정해야 합니다. 월만 기록된 날짜에 임의 날짜를 만들지 않습니다.'); return result; }
+  if (!anchor || anchor.precision !== 'day' || !asOf || asOf.precision !== 'day') { warnings.push('기록된 실제 일정과 분석 기준일을 일 단위로 지정해야 합니다. 월만 기록된 날짜에 임의 날짜를 만들지 않습니다.'); return stopUsage('기준 일정 미선택 또는 일 단위 날짜 아님'); }
   const start = addMonths(anchor, -o.months), end = addMonths(anchor, o.months);
   result.start = start.raw; result.end = end.raw;
-  if (isBefore(asOf, anchor)) { warnings.push('미래 사건: 전후 분석을 계산하지 않습니다.'); return result; }
+  if (isBefore(asOf, anchor)) { warnings.push('미래 사건: 전후 분석을 계산하지 않습니다.'); return stopUsage('기준 일정이 분석 기준일 이후'); }
+  // 기준 일정이 분석 기준일 이후에 알려진 것으로 기록된 경우: 기준일 시점 정보가 아니므로 관측 차이를 보여주지 않음
+  const known = parseDateValue(ms?.announcedOn);
+  const knownLate = !!known && isBefore(asOf, known) === true;
+  if (knownLate) warnings.push(`기준 일정이 분석 기준일 이후(${ms!.announcedOn})에 알려진 것으로 기록되어 있습니다 — 기준일 시점 정보가 아니어서 비교군 대비 관측 차이를 표시하지 않습니다.`);
   const complete = isBefore(asOf, end) !== true;
   result.complete = complete;
   if (!complete) warnings.push('관찰기간 미완료: 현재까지의 표본·중위값만 표시하고 변동률·차이는 계산하지 않습니다.');
@@ -101,7 +124,7 @@ export function observeGroups(w: WorkingInputs) {
   const sameEvent = (ev?.milestones ?? []).filter(m => m.key !== ms!.key && inWindow(m.date));
   if (sameEvent.length) warnings.push(`같은 사건의 다른 일정이 관찰기간에 있습니다(${sameEvent.map(m => `${MILESTONE_LABEL[m.type] ?? m.type} ${m.date}${m.status === 'actual' ? '' : ' 예정'}`).join(', ')}) — 선택 일정만의 변화로 구분할 수 없습니다.`);
   const area = w.property.exclusiveAreaM2, band = w.options.areaBandPct;
-  if (!area || !Number.isFinite(area) || area <= 0 || !Number.isFinite(band) || band < 0) { warnings.push('유사 전용면적 비교를 위해 본건 전용면적과 유효한 면적 범위가 필요합니다.'); return result; }
+  if (!area || !Number.isFinite(area) || area <= 0 || !Number.isFinite(band) || band < 0) { warnings.push('유사 전용면적 비교를 위해 본건 전용면적과 유효한 면적 범위가 필요합니다.'); return stopUsage('본건 전용면적 미입력'); }
   const diag = diagnoseTrades(w.transactions);
   const excluded = new Set([...diag.identicalGroups.flatMap(g => g.keys.slice(1)), ...diag.conflictGroups.flatMap(g => g.keys)]);
   for (const g of liveCancelAmbiguity(w.transactions).values()) if (new Set(g.members.map(t => t.manualExclusion ?? '')).size > 1) g.members.forEach(t => excluded.add(t.key));
@@ -129,6 +152,37 @@ export function observeGroups(w: WorkingInputs) {
     result[group] = {pre:a, post:b, changePct: complete && enough && a.medianPerM2 ? (b.medianPerM2! / a.medianPerM2 - 1)*100 : null, complexes: new Set(rows.map(complexKeyOf)).size, strata: new Set(rows.map(stratum)).size};
   }
   if (result.impact.changePct !== null && result.control.changePct !== null) result.differencePp = result.impact.changePct - result.control.changePct;
+  result.valid = result.differencePp !== null && !knownLate;
+  // 단지별 사용·제외 내역(표시용)
+  const validKeys = new Set(valid.map(t => t.key));
+  const whyOut = (t: Transaction): string => {
+    const d = parseDateValue(t.contractDate);
+    if (t.cancelled) return '해제';
+    if (t.manualExclusion) return '사용자 제외';
+    if (excluded.has(t.key)) return 'ID 사본·충돌 또는 해제 대상 불확실';
+    if (t.reviewFlag) return '정정 확인 필요';
+    if (d?.precision !== 'day') return '계약일이 일 단위 아님';
+    if (!(t.priceKrw > 0) || !(t.exclusiveAreaM2 > 0)) return '금액·면적 미입력';
+    if (Math.abs(t.exclusiveAreaM2 / area - 1) > band / 100) return '면적 범위 밖';
+    if (isBefore(asOf, d) === true) return '분석 기준일 이후 계약';
+    return '관찰기간 밖';
+  };
+  const stratumOf = (t: Transaction) => `${complexKeyOf(t)}|area:${Math.floor(t.exclusiveAreaM2 / 5)}`;
+  for (const group of ['impact', 'control'] as const) for (const key of o[group]) {
+    const label = reportLabelOf(key, w.transactions);
+    if (result.overlap.includes(key)) { result.usage.push({ group, key, label, used: false, pre: 0, post: 0, strata: 0, reason: '영향권·비교군 양쪽에 선택 — 양쪽에서 제외', excluded: {} }); continue; }
+    if (!presentKeys.has(key)) { result.usage.push({ group, key, label, used: false, pre: 0, post: 0, strata: 0, reason: '현재 거래 자료에 없음(식별 정보 변경 또는 거래 삭제)', excluded: {} }); continue; }
+    const mine = w.transactions.filter(t => complexKeyOf(t) === key);
+    const excludedCounts: Record<string, number> = {};
+    for (const t of mine) if (!validKeys.has(t.key)) { const r = whyOut(t); excludedCounts[r] = (excludedCounts[r] ?? 0) + 1; }
+    const used = cohorts[group].filter(t => complexKeyOf(t) === key);
+    const validMine = mine.filter(t => validKeys.has(t.key));
+    const pre = used.filter(t => t.contractDate < anchor.raw).length, post = used.length - pre;
+    const unpaired = validMine.length - used.length;
+    if (unpaired > 0) excludedCounts['전·후 한쪽에만 있는 면적구간'] = unpaired;
+    result.usage.push({ group, key, label, used: used.length > 0, pre, post, strata: new Set(used.map(stratumOf)).size, excluded: excludedCounts,
+      reason: used.length ? undefined : validMine.length ? '전·후 양쪽에 같은 전용면적 구간(5㎡) 거래 없음' : '관찰기간·면적 범위 안 유효 거래 없음' });
+  }
   const used = [...cohorts.impact, ...cohorts.control];
   result.basis.sources = sourcesOf(used);
   result.basis.dataModes = [...new Set(used.map(t => DATA_MODE_LABEL[t.dataMode] ?? t.dataMode))];
