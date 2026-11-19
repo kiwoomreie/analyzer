@@ -2,7 +2,7 @@
 import type { AnalysisResult, ComplexResult } from "./analysis.ts";
 import { APP_NAME, complexKeyOf, DATA_MODE_LABEL, EVIDENCE_LEVEL_LABEL, EVIDENCE_SOURCE_LABEL, EVIDENCE_STATUS_LABEL, ORIGIN_LABEL, type AnalysisRecord, type WorkingInputs } from "./model.ts";
 import { evidenceLevel } from "./analysis.ts";
-import { stableStringify } from "./hash.ts";
+import { hashOf, stableStringify } from "./hash.ts";
 import { fmtMan, fmtNum, fmtPct, fmtPp } from "./units.ts";
 import type { ObservationResult } from "./observation.ts";
 
@@ -12,7 +12,12 @@ const yd = (d: number | null) => (d === null ? "-" : `${d > 0 ? "+" : ""}${d}년
 
 /** 결과를 만든 실행 당시 입력(없으면 현재 작업본) */
 export function inputOf(rec: AnalysisRecord, r: AnalysisResult): WorkingInputs {
-  return rec.runs.find((x) => x.result === r || x.inputHash === r.inputHash)?.input ?? rec.working;
+  return runOf(rec, r)?.input ?? rec.working;
+}
+
+/** 같은 해시의 재실행은 객체 일치를 우선하고 복구 후에는 최신 일치를 찾는다. */
+function runOf(rec: AnalysisRecord, r: AnalysisResult) {
+  return rec.runs.find(x => x.result === r) ?? [...rec.runs].reverse().find(x => x.inputHash === r.inputHash);
 }
 
 function header(rec: AnalysisRecord, r: AnalysisResult, title: string): string[] {
@@ -54,16 +59,21 @@ export function reportSummary(rec: AnalysisRecord, r: AnalysisResult): string {
 /** 수동 확인 그룹 관측(실행 당시 스냅샷 기준). 설정이 없으면 한 줄만. */
 export function groupObservationLines(rec: AnalysisRecord, r: AnalysisResult): string[] {
   const g = r.groupObservation;
-  const runNo = rec.runs.find((x) => x.result === r || x.inputHash === r.inputHash)?.runNo;
+  const run = runOf(rec, r);
+  const runNo = run?.runNo;
   if (!g) return ["### 수동 확인 그룹 관측", "- 이 분석 실행에는 그룹 관측 설정이 없음(또는 v0.6.1 이전 실행) — 설정 후 ‘분석 다시 실행’ 시 포함"];
   const row = (name: string, x: ObservationResult["impact"]) => `| ${name} | ${x.complexes}/${x.strata} | ${x.pre.count}건 | ${x.post.count}건 | ${fmtMan(x.pre.medianPerM2)} | ${fmtMan(x.post.medianPerM2)} | ${fmtPct(x.changePct)} |`;
-  const names = (keys: string[]) => keys.map((k) => esc(labelFor(rec, r, k))).join(", ") || "없음";
-  const w = inputOf(rec, r);
-  const o = w.observation;
+  const w = run?.input ?? (hashOf(rec.working) === r.inputHash ? rec.working : undefined);
+  const names = (group: 'impact' | 'control') => {
+    const labels = g.selectionLabels?.[group];
+    if (labels) return labels.map(esc).join(', ') || '없음';
+    if (!w) return '당시 입력 스냅샷 없음 — 단지명 확인 불가';
+    return (w.observation?.[group] ?? []).map(k => esc(labelFor(w, k))).join(', ') || '없음';
+  };
   return [
     `### 수동 확인 그룹 관측 (실행 #${runNo ?? "?"} 입력 기준 · 인과효과 아님)`,
     `- 기준 일정: ${esc(g.anchorLabel || "미선택")} ${g.anchor || ""} · 전 [${g.start || "—"}, 기준일) / 후 [기준일, ${g.end || "—"}) · ${g.complete ? "관찰기간 완료" : "관찰기간 미완료 또는 미산출"}`,
-    `- 영향권(사용자 확인): ${names(o?.impact ?? [])} · 비교군(사용자 확인): ${names(o?.control ?? [])}`,
+    `- 영향권(사용자 확인): ${names("impact")} · 비교군(사용자 확인): ${names("control")}`,
     `- 분석 기준일 ${g.basis.asOf} · 단위 ${g.basis.unit} · 출처 ${esc(g.basis.sources.join(", ") || "해당 거래 없음")}${g.basis.dataModes.length ? ` · 자료 ${g.basis.dataModes.join("·")}` : ""}`,
     "",
     "| 그룹 | 단지/면적구간 | 전 표본 | 후 표본 | 전 중위(전용㎡) | 후 중위(전용㎡) | 관측 변동률 |",
@@ -72,11 +82,11 @@ export function groupObservationLines(rec: AnalysisRecord, r: AnalysisResult): s
     "",
     `- 영향권 − 비교군 변동률 차이: ${fmtPp(g.differencePp)} (인과효과 아님)`,
     ...g.warnings.map((x) => `- [확인] ${esc(x)}`),
+    ...g.notes.map(x => `- [계산 기준·한계] ${esc(x)}`),
     ...(g.missingSelections ?? []).map((m) => `- [선택 단지 없음] ${m.group === "impact" ? "영향권" : "비교군"} ${esc(m.label.name)}(${esc(m.label.detail)})${m.similar.length ? ` — 같은 이름 다른 식별: ${m.similar.map((s) => esc(s.label.detail)).join(", ")}` : ""}`),
   ];
 }
-function labelFor(rec: AnalysisRecord, r: AnalysisResult, key: string): string {
-  const w = inputOf(rec, r);
+function labelFor(w: WorkingInputs, key: string): string {
   const t = w.transactions.find((x) => complexKeyOf(x) === key);
   if (t) return `${t.complexName}${t.dong ? `(${t.dong})` : ""}`;
   return key.startsWith("S:") ? `단지 ID ${key.slice(2)}` : key.replace(/^N:/, "").split("|")[0];
@@ -108,7 +118,7 @@ function appendix(rec: AnalysisRecord, r: AnalysisResult): string {
   if (g?.monthly.length) {
     L.push("", "### E. 수동 확인 그룹 월별 중위 단가(전용㎡, 만원) · 동일 분석 표본", "", "| 월 | 영향권 중위 / 건수 | 비교군 중위 / 건수 |", "|---|---|---|",
       ...g.monthly.map((m) => `| ${m.month} | ${fmtMan(m.impact)} / ${m.impactN}건 | ${fmtMan(m.control)} / ${m.controlN}건 |`),
-      "", "- 경계 월은 일부 날짜만 포함. 거래 없는 달은 0원이 아닌 미산출.", ...g.notes.map((x) => `- ${esc(x)}`));
+      "", "- 경계 월은 일부 날짜만 포함. 거래 없는 달은 0원이 아닌 미산출.");
   }
   return L.join("\n");
 }
@@ -150,7 +160,7 @@ export function reportDraft(rec: AnalysisRecord, r: AnalysisResult): string {
   r.market.comparables.forEach((c) => L.push(`  - ${c.name}: ${c.selectionReason}, 중위 ${fmtMan(c.stats.medianPerM2)}/전용㎡임.`));
   L.push(`- ${r.price.text.replace(/\.$/, "")}임.`);
   L.push(`- ${r.observed.text.replace(/\.$/, "")}임.`);
-  if (r.groupObservation) { const g = r.groupObservation; L.push(`- 수동 확인 그룹 관측(${g.anchor || "기준 일정 미선택"} 전후 ${g.start ? "" : "미산출 "}· 사용자 확인 그룹): 영향권 ${fmtPct(g.impact.changePct)}, 비교군 ${fmtPct(g.control.changePct)}, 차이 ${fmtPp(g.differencePp)}로 관측됨 — 인과효과 아님.`); }
+  if (r.groupObservation) { const g = r.groupObservation; L.push(`- 수동 확인 그룹 관측(${g.anchor || "기준 일정 미선택"} 전후 ${g.start ? "" : "미산출 "}· 사용자 확인 그룹): 영향권 ${fmtPct(g.impact.changePct)}, 비교군 ${fmtPct(g.control.changePct)}, 차이 ${fmtPp(g.differencePp)}로 관측됨 — 인과효과 아님.`); L.push(...g.warnings.map(x => `  - [그룹 관측 확인] ${esc(x)}`)); }
   r.events.filter((e) => e.prepricing).forEach((e) => L.push(`- 「${e.name}」 선반영: ${e.prepricing!.text.replace(/\.$/, "")}임.`));
   L.push(`- ${r.causalEffect.text}임.`);
   L.push("", "## 4. 주변 입주 물량");

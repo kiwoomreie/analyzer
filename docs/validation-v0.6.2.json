@@ -1,0 +1,20 @@
+{
+  "date": "2026-11-19",
+  "node": "22.23.5",
+  "baseline": {
+    "unit_integration": {
+      "pass": 114,
+      "fail": 0
+    }
+  },
+  "final": {
+    "typecheck": "pass",
+    "build": "pass",
+    "unit_integration": {
+      "pass": 122,
+      "fail": 0
+    },
+    "browser_e2e": "blocked: Chromium socket() Operation not permitted"
+  },
+  "real_api": "not_run"
+}

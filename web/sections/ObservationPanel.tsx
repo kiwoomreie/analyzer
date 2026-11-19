@@ -1,19 +1,14 @@
 import type { SectionProps } from '../AnalysisView.tsx';
 import { Badge } from '../components.tsx';
 import { complexKeyOf, MILESTONE_LABEL } from '../../shared/model.ts';
-import { labelOfComplexKey, observationOptions, observeGroups, type ObservationOptions, type ObservationResult } from '../../shared/observation.ts';
+import { labelOfComplexKey, validObservationLocation, observationOptions, observeGroups, type ObservationOptions, type ObservationResult } from '../../shared/observation.ts';
 import { latestRun } from '../../shared/runs.ts';
-import { stableStringify } from '../../shared/hash.ts';
 import { fmtMan, fmtPct, fmtPp } from '../../shared/units.ts';
 
 const GROUP_LABEL = { impact: '영향권', control: '비교군' } as const;
-/** 실행 결과와 비교할 핵심 값(경고 문구 차이는 제외) */
-const signature = (r: ObservationResult) => stableStringify({ a: r.anchor, s: r.start, e: r.end, d: r.differencePp,
-  g: (['impact', 'control'] as const).map(k => [r[k].pre.count, r[k].post.count, r[k].pre.medianPerM2, r[k].post.medianPerM2, r[k].changePct, r[k].complexes, r[k].strata]) });
-
 export function ObservationPanel({rec, update}: Pick<SectionProps,'rec'|'update'>) {
   const w=rec.working, o=observationOptions(w), r=observeGroups(w);
-  const { run, result: runResult } = latestRun(rec);
+  const { run, result: runResult, stale } = latestRun(rec);
   const runObs = runResult?.groupObservation;
   const change=(fn:(x:ObservationOptions)=>void)=>update(x=>{x.observation=observationOptions(x);fn(x.observation);});
   const complexes=[...new Map(w.transactions.map(t=>[complexKeyOf(t),t])).keys()].map(k=>({key:k,label:labelOfComplexKey(k,w.transactions),missing:false}));
@@ -23,7 +18,7 @@ export function ObservationPanel({rec, update}: Pick<SectionProps,'rec'|'update'
   const status = !configured ? null
     : !run ? { tone: 'warn', text: '아직 분석 실행 기록이 없습니다 — ‘분석 다시 실행’ 후 보고서에 포함됩니다.' }
     : !runObs ? { tone: 'warn', text: `마지막 분석 실행(#${run.runNo})에는 그룹 관측이 없습니다 — 보고서에 넣으려면 ‘분석 다시 실행’을 누르십시오.` }
-    : signature(runObs) !== signature(r) ? { tone: 'bad', text: `아래 값은 현재 작업본 기준이며 마지막 분석 실행(#${run.runNo}) 결과와 다릅니다. 보고서에는 실행 #${run.runNo} 값이 들어갑니다 — ‘분석 다시 실행’으로 반영하십시오.` }
+    : stale ? { tone: 'bad', text: `아래 값은 현재 작업본 기준이며 마지막 분석 실행(#${run.runNo}) 결과와 다릅니다. 보고서에는 실행 #${run.runNo} 값이 들어갑니다 — ‘분석 다시 실행’으로 반영하십시오.` }
     : { tone: 'ok', text: `마지막 분석 실행(#${run.runNo})과 같은 값입니다 — 보고서에 이 값이 들어갑니다.` };
   return <div data-testid="observation-panel">
     <h4>수동 확인 영향권·비교군 관측 <Badge tone="info">현재 작업본 기준 · 즉시 갱신</Badge> <span className="muted small">인과효과 아님 · 자동 반경 선정 없음</span></h4>
@@ -41,7 +36,7 @@ export function ObservationPanel({rec, update}: Pick<SectionProps,'rec'|'update'
           {missing && (()=>{ const sim=r.missingSelections.find(m=>m.key===k)?.similar ?? []; return sim.length ? <div className="warn-text">같은 이름 다른 식별: {sim.map(s=>s.label.detail).join(', ')} — 확인 후 다시 선택(자동 변경 안 함)</div> : <div className="muted">식별 정보 변경 또는 거래 삭제 — 선택 해제 가능</div>; })()}
         </td>
         {(['impact','control'] as const).map(g=><td key={g}><input type="checkbox" aria-label={`${label.name} ${GROUP_LABEL[g]}`} checked={o[g].includes(k)} disabled={missing && !o[g].includes(k)} onChange={(e: any)=>change(x=>{x[g]=e.target.checked?[...new Set([...x[g],k])]:x[g].filter(v=>v!==k);})}/></td>)}
-        <td>{missing ? '-' : w.complexInfo.find(c=>c.complexKey===k)?.location?'기록 있음(별도 확인 필요)':'미확인'}</td></tr>)}
+        <td>{missing ? '-' : validObservationLocation(w.complexInfo.find(c=>c.complexKey===k)?.location)?'기록 있음(별도 확인 필요)':'미확인'}</td></tr>)}
       {!complexes.length && !missingRows.length && <tr><td colSpan={4} className="muted">거래 자료 없음</td></tr>}
     </tbody></table></div>
     {r.warnings.length > 0 && <ul className="small warn-text" data-testid="obs-warnings">{r.warnings.map((s,i)=><li key={i}>{s}</li>)}</ul>}

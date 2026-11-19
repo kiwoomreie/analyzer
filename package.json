@@ -1,6 +1,6 @@
 {
   "name": "location-analyzer",
-  "version": "0.1.0",
+  "version": "0.6.2",
   "private": true,
   "description": "아파트 입지·가격 분석기 — 분양가·담보가치·회수시점 검증",
   "type": "module",
@@ -15,7 +15,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "node --import tsx --test tests/unit/*.test.ts tests/integration/*.test.ts",
     "test:e2e": "npm run build && node --import tsx --test tests/e2e/*.test.ts",
-    "test:all": "npm run typecheck && npm test && npm run test:e2e"
+    "test:all": "npm run typecheck && npm run build && npm test && npm run test:e2e"
   },
   "dependencies": {
     "react": "19.2.8",

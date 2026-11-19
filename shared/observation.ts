@@ -15,6 +15,11 @@ export function observationOptions(w: WorkingInputs): ObservationOptions {
     impact: Array.isArray(o?.impact) ? [...new Set(o.impact.filter(x => typeof x === 'string'))] : [],
     control: Array.isArray(o?.control) ? [...new Set(o.control.filter(x => typeof x === 'string'))] : [] };
 }
+/** 숫자 범위까지 확인한 좌표만 기록 있음으로 표시한다. */
+export function validObservationLocation(loc: { lat: number; lng: number } | undefined): boolean {
+  return !!loc && Number.isFinite(loc.lat) && Number.isFinite(loc.lng) && Math.abs(loc.lat) <= 90 && Math.abs(loc.lng) <= 180;
+}
+
 /** 그룹 관측을 설정했는지(사건·일정 또는 그룹 선택이 하나라도 있음) */
 export function observationConfigured(w: WorkingInputs): boolean {
   const o = observationOptions(w);
@@ -52,6 +57,11 @@ export function observeGroups(w: WorkingInputs) {
     impact: empty(), control: empty(), differencePp: null as number | null,
     monthly: [] as { month: string; impact: number | null; control: number | null; impactN: number; controlN: number }[], overlap: o.impact.filter(k => o.control.includes(k)),
     missingSelections: [] as MissingSelection[],
+    // 오래된 실행의 입력 스냅샷이 압축돼도 당시 선택 단지명을 재현한다.
+    selectionLabels: Object.fromEntries((['impact', 'control'] as const).map(group => [group, o[group].map(key => {
+      const t = w.transactions.find(t => complexKeyOf(t) === key);
+      return t ? `${t.complexName}${t.dong ? `(${t.dong})` : ''}` : labelOfComplexKey(key).name;
+    })])) as Record<'impact' | 'control', string[]>,
     basis: { asOf: w.asOf, unit: '만원/전용㎡(원 단위 계산)', sources: [] as string[], dataModes: [] as string[] } };
   // 선택했지만 현재 거래 자료에 없는 단지(식별 정보 변경·거래 삭제) — 조용히 0건이 되지 않도록 표시
   for (const group of ['impact', 'control'] as const) for (const key of o[group]) if (!presentKeys.has(key)) {
@@ -70,7 +80,7 @@ export function observeGroups(w: WorkingInputs) {
   if (w.transactions.some(t => t.dataMode === 'demo') || ev?.dataMode === 'demo') warnings.push('가상 자료 포함 — 실제 판단에 사용 불가.');
   if (result.overlap.length) warnings.push(`그룹 중복 ${result.overlap.length}개 단지는 양쪽에서 제외했습니다.`);
   const selected = new Set([...o.impact, ...o.control].filter(k => presentKeys.has(k)));
-  const unknown = [...selected].filter(k => !w.complexInfo.find(c => c.complexKey === k)?.location);
+  const unknown = [...selected].filter(k => !validObservationLocation(w.complexInfo.find(c => c.complexKey === k)?.location));
   if (unknown.length) warnings.push(`좌표 미확인 ${unknown.length}개 단지: 수동 확인의 공간적 타당성을 재확인하십시오.`);
   if (!anchor || anchor.precision !== 'day' || !asOf || asOf.precision !== 'day') { warnings.push('기록된 실제 일정과 분석 기준일을 일 단위로 지정해야 합니다. 월만 기록된 날짜에 임의 날짜를 만들지 않습니다.'); return result; }
   const start = addMonths(anchor, -o.months), end = addMonths(anchor, o.months);
@@ -79,7 +89,7 @@ export function observeGroups(w: WorkingInputs) {
   const complete = isBefore(asOf, end) !== true;
   result.complete = complete;
   if (!complete) warnings.push('관찰기간 미완료: 현재까지의 표본·중위값만 표시하고 변동률·차이는 계산하지 않습니다.');
-  const inWindow = (date?: string) => { const d = parseDateValue(date); return !!d && isBefore(d, start) !== true && isBefore(end, d) !== true; };
+  const inWindow = (date?: string) => { const d = parseDateValue(date); return !!d && isBefore(d, start) !== true && isBefore(d, end) !== false; };
   if (w.events.some(e => e.key !== ev?.key && e.milestones.some(m => inWindow(m.date)))) warnings.push('관찰기간에 겹치는 다른 사건이 기록되어 있습니다. 독립적인 영향을 분리할 수 없습니다.');
   // 같은 사건의 다른 일정(예: 개통 기준인데 관찰기간 안에 착공·발표)도 영향이 섞일 수 있음
   const sameEvent = (ev?.milestones ?? []).filter(m => m.key !== ms!.key && inWindow(m.date));
