@@ -107,6 +107,8 @@ export interface SupplyResult {
 
 export interface AnalysisResult {
   engineVersion: string; inputHash: string; asOf: string;
+  /** v0.6.1: 실행 당시 수동 확인 그룹 관측 결과(그룹 관측 설정이 있을 때만, withRun에서 채움) */
+  groupObservation?: import("./observation.ts").ObservationResult;
   missing: MissingItem[];
   property: { address: string; exclusiveAreaM2: number | null; exclusivePyeong: number | null; buildYear: number | null; coordinatesText: string };
   events: EventResult[];

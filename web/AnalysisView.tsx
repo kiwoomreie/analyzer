@@ -49,24 +49,46 @@ export function AnalysisView({ storage, recKey, session }: { storage: StorageKin
     }
   }, [storage, recKey]);
 
+  /** 저장 대기 중인 기록(0.4초 묶음 저장). 새로고침·탭 닫기·화면 이동 시 즉시 저장해 마지막 수정이 사라지지 않게 함 */
+  const pending = useRef<AnalysisRecord | null>(null);
+  const memoryOnlyRef = useRef(memoryOnly);
+  memoryOnlyRef.current = memoryOnly;
+  const save = (r: AnalysisRecord) => {
+    if (storage === "server-temporary") {
+      putTemp(r).then(() => setSaveState("임시 분석에 반영됨")).catch((e) => setSaveState(`반영 실패: ${(e as Error).message}`));
+      return;
+    }
+    if (storage === "draft" && memoryOnlyRef.current) { memoryDrafts.set(r.key, r); setSaveState("메모리에만 있음 — 새로고침하면 사라짐"); return; }
+    const err = storage === "browser-local" ? localStore.put(r) : draftStore.put(r);
+    if (err) {
+      if (storage === "draft") { memoryDrafts.set(r.key, r); setMemoryOnly(true); }
+      setSaveError(err);
+      setSaveState("저장 실패");
+      return;
+    }
+    setSaveError(null);
+    setSaveState(storage === "browser-local" ? `이 브라우저에 저장됨 ${new Date().toLocaleTimeString("ko-KR")}` : "아직 저장 전 — ‘이 브라우저에 저장’을 누르십시오");
+  };
+  const flush = () => {
+    clearTimeout(timer.current);
+    const r = pending.current;
+    pending.current = null;
+    if (r) save(r);
+  };
+  const flushRef = useRef(flush);
+  flushRef.current = flush;
+  useEffect(() => {
+    const onHide = () => flushRef.current();
+    const onVis = () => { if (document.visibilityState === "hidden") flushRef.current(); };
+    window.addEventListener("pagehide", onHide);
+    window.addEventListener("beforeunload", onHide);
+    document.addEventListener("visibilitychange", onVis);
+    return () => { window.removeEventListener("pagehide", onHide); window.removeEventListener("beforeunload", onHide); document.removeEventListener("visibilitychange", onVis); flushRef.current(); };
+  }, []);
   const persist = (r: AnalysisRecord) => {
     clearTimeout(timer.current);
-    timer.current = setTimeout(async () => {
-      if (storage === "server-temporary") {
-        try { await putTemp(r); setSaveState("임시 분석에 반영됨"); } catch (e) { setSaveState(`반영 실패: ${(e as Error).message}`); }
-        return;
-      }
-      if (storage === "draft" && memoryOnly) { memoryDrafts.set(r.key, r); setSaveState("메모리에만 있음 — 새로고침하면 사라짐"); return; }
-      const err = storage === "browser-local" ? localStore.put(r) : draftStore.put(r);
-      if (err) {
-        if (storage === "draft") { memoryDrafts.set(r.key, r); setMemoryOnly(true); }
-        setSaveError(err);
-        setSaveState("저장 실패");
-        return;
-      }
-      setSaveError(null);
-      setSaveState(storage === "browser-local" ? `이 브라우저에 저장됨 ${new Date().toLocaleTimeString("ko-KR")}` : "아직 저장 전 — ‘이 브라우저에 저장’을 누르십시오");
-    }, 400);
+    pending.current = r;
+    timer.current = setTimeout(flush, 400);
   };
   const setRec = (r: AnalysisRecord) => { recRef.current = r; setRecState(r); persist(r); };
   /** 최신 기록(recRef)에 변경을 적용 — 응답 대기 중 사용자가 바꾼 값이 사라지지 않음 */
@@ -88,14 +110,18 @@ export function AnalysisView({ storage, recKey, session }: { storage: StorageKin
   const r = lr.result;
   const stale = lr.stale;
 
+  /** 저장 대기분 취소(삭제·다른 저장소로 옮긴 뒤 화면을 떠날 때 옛 위치에 다시 쓰지 않도록) */
+  const cancelPending = () => { clearTimeout(timer.current); pending.current = null; };
   const saveToBrowser = () => {
-    const local = { ...structuredClone(rec), key: newKey("lc"), updatedAt: seoulNowIso() };
+    const local = { ...structuredClone(recRef.current ?? rec), key: newKey("lc"), updatedAt: seoulNowIso() };
     const err = localStore.put(local);
     if (err) { setSaveError(err); setSaveState("저장 실패"); return; }
+    cancelPending();
     if (storage === "draft") draftStore.remove(rec.key);
     navigate(`/app/l/${local.key}`);
   };
   const remove = async () => {
+    cancelPending();
     if (storage === "server-temporary") { try { await deleteTemp(rec.key); } catch (e) { return setSaveState((e as Error).message); } }
     else if (storage === "browser-local") localStore.remove(rec.key);
     else draftStore.remove(rec.key);
