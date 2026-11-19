@@ -23,7 +23,7 @@ let sessionError: string | null = null;
 declare const __PREVIEW__: boolean | undefined;
 export async function getSession(): Promise<SessionInfo | null> {
   if (session) return session;
-  if (typeof __PREVIEW__ !== "undefined" && __PREVIEW__) { sessionError = "미리보기: 새 앱 서버 없이 이 브라우저에서만 실행 중 — 공공데이터·카카오 자동 조회는 사용할 수 없고, 분석·저장·보고서는 동작합니다"; return null; }
+  if (typeof __PREVIEW__ !== "undefined" && __PREVIEW__) { sessionError = "서버 없는 웹 버전: 이 브라우저에서만 실행 중(저장도 이 브라우저에만 됨) — 공공데이터·카카오 자동 조회는 사용할 수 없고, 분석·저장·보고서는 동작합니다"; return null; }
   try {
     const r = await fetch("/api/session", { credentials: "same-origin" });
     if (!r.ok) throw new Error(String(r.status));

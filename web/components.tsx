@@ -166,7 +166,13 @@ export function download(filename: string, text: string, mime = "text/markdown;c
   if (IS_PREVIEW) {
     const fallback = (why?: string) => window.dispatchEvent(new CustomEvent("la:download", { detail: { filename, text, why } }));
     getHostDownloads().then((dl) => {
-      if (!dl) { plainDownload(filename, text, mime); fallback(); return; }
+      if (!dl) {
+        plainDownload(filename, text, mime);
+        // GitHub Pages 등 단독 접속에서는 일반 내려받기로 충분. 다른 화면 안(프레임)이면 막힐 수 있어 내용 패널도 표시
+        const framed = (() => { try { return window.top !== window.self; } catch { return true; } })();
+        if (framed) fallback();
+        return;
+      }
       dl.save({ filename, data: text }).catch((e: any) => { if (e?.code !== "declined") fallback(`저장 실패(${e?.code ?? "unknown"})`); });
     });
     return;

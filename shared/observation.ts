@@ -36,6 +36,15 @@ export function labelOfComplexKey(key: string, list: Transaction[] = []): Comple
   return { name, detail: [sgg && `시군구 ${sgg}`, dong, jibun && `지번 ${jibun}`].filter(Boolean).join(' · ') || '시군구·법정동 미기재' };
 }
 
+/** 보고서용 단지명: 기본은 "단지명(법정동)", 같은 표기가 다른 단지와 겹치면 시군구·지번·단지 ID까지 붙여 구별 */
+export function reportLabelOf(key: string, list: Transaction[]): string {
+  const short = (k: string) => { const t = list.find(x => complexKeyOf(x) === k); const l = labelOfComplexKey(k, list); return t ? `${t.complexName}${t.dong ? `(${t.dong})` : ''}` : l.name; };
+  const mine = short(key);
+  const keys = new Set([...list.map(complexKeyOf), key]);
+  const clash = [...keys].some(k => k !== key && short(k) === mine);
+  return clash ? `${labelOfComplexKey(key, list).name}(${labelOfComplexKey(key, list).detail})` : mine;
+}
+
 export interface MissingSelection { group: 'impact' | 'control'; key: string; label: ComplexLabel; similar: { key: string; label: ComplexLabel }[] }
 export type ObservationResult = ReturnType<typeof observeGroups>;
 
@@ -58,10 +67,7 @@ export function observeGroups(w: WorkingInputs) {
     monthly: [] as { month: string; impact: number | null; control: number | null; impactN: number; controlN: number }[], overlap: o.impact.filter(k => o.control.includes(k)),
     missingSelections: [] as MissingSelection[],
     // 오래된 실행의 입력 스냅샷이 압축돼도 당시 선택 단지명을 재현한다.
-    selectionLabels: Object.fromEntries((['impact', 'control'] as const).map(group => [group, o[group].map(key => {
-      const t = w.transactions.find(t => complexKeyOf(t) === key);
-      return t ? `${t.complexName}${t.dong ? `(${t.dong})` : ''}` : labelOfComplexKey(key).name;
-    })])) as Record<'impact' | 'control', string[]>,
+    selectionLabels: Object.fromEntries((['impact', 'control'] as const).map(group => [group, o[group].map(key => reportLabelOf(key, w.transactions))])) as Record<'impact' | 'control', string[]>,
     basis: { asOf: w.asOf, unit: '만원/전용㎡(원 단위 계산)', sources: [] as string[], dataModes: [] as string[] } };
   // 선택했지만 현재 거래 자료에 없는 단지(식별 정보 변경·거래 삭제) — 조용히 0건이 되지 않도록 표시
   for (const group of ['impact', 'control'] as const) for (const key of o[group]) if (!presentKeys.has(key)) {

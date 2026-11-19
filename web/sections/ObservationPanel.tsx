@@ -4,6 +4,7 @@ import { complexKeyOf, MILESTONE_LABEL } from '../../shared/model.ts';
 import { labelOfComplexKey, validObservationLocation, observationOptions, observeGroups, type ObservationOptions, type ObservationResult } from '../../shared/observation.ts';
 import { latestRun } from '../../shared/runs.ts';
 import { fmtMan, fmtPct, fmtPp } from '../../shared/units.ts';
+import { stableStringify } from '../../shared/hash.ts';
 
 const GROUP_LABEL = { impact: '영향권', control: '비교군' } as const;
 export function ObservationPanel({rec, update}: Pick<SectionProps,'rec'|'update'>) {
@@ -18,7 +19,8 @@ export function ObservationPanel({rec, update}: Pick<SectionProps,'rec'|'update'
   const status = !configured ? null
     : !run ? { tone: 'warn', text: '아직 분석 실행 기록이 없습니다 — ‘분석 다시 실행’ 후 보고서에 포함됩니다.' }
     : !runObs ? { tone: 'warn', text: `마지막 분석 실행(#${run.runNo})에는 그룹 관측이 없습니다 — 보고서에 넣으려면 ‘분석 다시 실행’을 누르십시오.` }
-    : stale ? { tone: 'bad', text: `아래 값은 현재 작업본 기준이며 마지막 분석 실행(#${run.runNo}) 결과와 다릅니다. 보고서에는 실행 #${run.runNo} 값이 들어갑니다 — ‘분석 다시 실행’으로 반영하십시오.` }
+    : stableStringify(runObs) !== stableStringify(r) ? { tone: 'bad', text: `아래 값은 현재 작업본 기준이며 마지막 분석 실행(#${run.runNo}) 결과와 다릅니다. 보고서에는 실행 #${run.runNo} 값이 들어갑니다 — ‘분석 다시 실행’으로 반영하십시오.` }
+    : stale ? { tone: 'warn', text: `그룹 관측 값은 마지막 분석 실행(#${run.runNo})과 같지만 다른 입력이 바뀌었습니다 — 보고서 전체를 현재 입력으로 맞추려면 ‘분석 다시 실행’을 누르십시오.` }
     : { tone: 'ok', text: `마지막 분석 실행(#${run.runNo})과 같은 값입니다 — 보고서에 이 값이 들어갑니다.` };
   return <div data-testid="observation-panel">
     <h4>수동 확인 영향권·비교군 관측 <Badge tone="info">현재 작업본 기준 · 즉시 갱신</Badge> <span className="muted small">인과효과 아님 · 자동 반경 선정 없음</span></h4>

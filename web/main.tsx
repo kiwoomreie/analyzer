@@ -27,7 +27,7 @@ function App() {
   return (
     <div className="app">
       <header className="top">
-        {PREVIEW && <span className="badge tone-warn" data-testid="preview-badge">미리보기(서버 없음)</span>}
+        {PREVIEW && <span className="badge tone-warn" data-testid="preview-badge" title="서버 없이 이 브라우저에서만 실행 — 저장도 이 브라우저에만 됨">서버 없는 웹 버전</span>}
         <a className="brand" href="/app" onClick={(e: any) => { e.preventDefault(); navigate("/app"); }}><b>{APP_NAME}</b></a>
         <span className="muted small">주소로 시작 · 입지 변화 / 실거래 비교 / 확인할 사항 · 협의체와 별도로 사용</span>
       </header>

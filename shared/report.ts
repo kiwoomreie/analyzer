@@ -4,7 +4,7 @@ import { APP_NAME, complexKeyOf, DATA_MODE_LABEL, EVIDENCE_LEVEL_LABEL, EVIDENCE
 import { evidenceLevel } from "./analysis.ts";
 import { hashOf, stableStringify } from "./hash.ts";
 import { fmtMan, fmtNum, fmtPct, fmtPp } from "./units.ts";
-import type { ObservationResult } from "./observation.ts";
+import { reportLabelOf, type ObservationResult } from "./observation.ts";
 
 const esc = (s: string) => s.replace(/\|/g, "\\|").replace(/\r?\n/g, " ");
 const dist = (m: number | null) => (m === null ? "미확인" : `${Math.round(m).toLocaleString("ko-KR")}m`);
@@ -87,9 +87,7 @@ export function groupObservationLines(rec: AnalysisRecord, r: AnalysisResult): s
   ];
 }
 function labelFor(w: WorkingInputs, key: string): string {
-  const t = w.transactions.find((x) => complexKeyOf(x) === key);
-  if (t) return `${t.complexName}${t.dong ? `(${t.dong})` : ""}`;
-  return key.startsWith("S:") ? `단지 ID ${key.slice(2)}` : key.replace(/^N:/, "").split("|")[0];
+  return reportLabelOf(key, w.transactions);
 }
 
 function appendix(rec: AnalysisRecord, r: AnalysisResult): string {
