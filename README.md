@@ -1,3 +1,20 @@
+# v0.7 — Vercel 배포(자동 조회 지원)
+
+GitHub `main`에 올리면 Vercel이 `npm run build:vercel`(Build Output API)로 화면과 서버 함수를 함께 배포한다. 국토부·카카오 키는 **Vercel 환경변수에만** 넣고 저장소·빌드 결과·브라우저로 보내지 않는다.
+
+| Vercel 환경변수 | 내용 |
+|---|---|
+| `MOLIT_SERVICE_KEY` | 공공데이터포털 ‘국토교통부_아파트 매매 실거래가’ 일반 인증키 |
+| `KAKAO_REST_KEY` | 카카오디벨로퍼스 REST API 키(주소→좌표, 주변 시군구) |
+| `KAKAO_JS_KEY` | (선택) 카카오 지도 JavaScript 키 — 카카오 콘솔에서 배포 도메인만 허용 |
+| `APP_ACCESS_PASSWORD` | 자동 조회용 공용 접속 비밀번호 |
+| `APP_SESSION_SECRET` | 로그인 쿠키 서명용 임의 문자열(32자 이상) |
+
+- 자동 조회는 접속 비밀번호로 로그인한 사용자만 쓸 수 있다(서명 쿠키 12시간, CSRF 토큰, 같은 사이트 요청만, 인스턴스별 횟수 제한). 비밀번호·비밀값이 없으면 자동 조회를 막는다. 분석·저장·보고서는 로그인 없이 동작하며 저장은 각자 브라우저에만 된다.
+- 함수: `/api/session`, `/api/login`, `/api/logout`, `/api/public-data/lookup`(최대 60초), `/launch`는 계속 대기(503).
+- 서버 임시 분석 저장(협의체 자동 실행용)은 서버리스 배포에서 쓰지 않는다.
+- 로컬 확인: `npm run build:vercel` 후 `tests/helpers/vercelLocal.ts`로 흉내 서버를 띄워 시험한다(`tests/e2e/vercel.test.ts`). 실제 Vercel 동작은 첫 배포에서 확인해야 한다.
+
 # v0.6.3 — GitHub Pages 웹 버전
 
 - **배포**: `main` 브랜치에 올리면 `.github/workflows/pages.yml`이 타입검사·빌드·단위/통합 시험 후 서버 없는 웹 버전(`dist/preview/index.html`)을 GitHub Pages에 올린다. 처음 한 번 저장소 Settings → Pages → Source를 **GitHub Actions**로 지정해야 한다. 비공개 저장소의 Pages는 GitHub 유료 요금제가 필요하고, Pages 주소 자체는 누구나 열 수 있다(Enterprise 제외).

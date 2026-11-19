@@ -135,7 +135,9 @@ export function MarketSection({ rec, getRec, update, setRec, session }: SectionP
   const ws = parseDateValue(m.recentWindow.start);
   if (ws) for (let i = 0; i < m.recentWindow.months; i++) { const t = ws.y * 12 + ws.m - 1 + i; monthly.set(`${Math.floor(t / 12)}-${String((t % 12) + 1).padStart(2, "0")}`, 0); }
   m.txRows.filter((x) => x.included).forEach((x) => { const t = snapTx.get(x.key); const k = t?.contractDate.slice(0, 7); if (k && monthly.has(k)) monthly.set(k, monthly.get(k)! + 1); });
-  const configured = session?.config.publicData === "configured" || session?.config.geocoder === "configured";
+  const keysSet = session?.config.publicData === "configured" || session?.config.geocoder === "configured";
+  const needLogin = !!session?.config.auth?.required && !session.config.auth.signedIn;
+  const configured = keysSet && !needLogin;
   const lastCol = (w.collections ?? [])[0] ? migrateCollection((w.collections ?? [])[0]) : undefined;
   const complexes = [...m.complexes].sort((a, b) => ORDER[a.status] - ORDER[b.status] || (a.distanceM ?? 1e9) - (b.distanceM ?? 1e9));
 
@@ -144,7 +146,8 @@ export function MarketSection({ rec, getRec, update, setRec, session }: SectionP
       <div className="toolbar">
         <label className="filebtn">실거래 CSV 가져오기<input type="file" accept=".csv" data-testid="csv-import" onChange={(e: any) => { const f = e.target.files?.[0]; if (f) importCsv(f); e.target.value = ""; }} /></label>
         <button onClick={lookup} disabled={!configured || busy} data-testid="public-lookup">{busy ? "조회 중…" : "주소로 좌표·실거래 자동 조회"}</button>
-        {!configured && <Badge tone="muted">공공데이터·지도 키 미설정 — 자동 조회 불가(CSV·직접 입력 사용)</Badge>}
+        {!keysSet && <Badge tone="muted">공공데이터·지도 키 미설정 — 자동 조회 불가(CSV·직접 입력 사용)</Badge>}
+        {keysSet && needLogin && <Badge tone="warn">자동 조회는 화면 위쪽에서 접속 비밀번호로 로그인한 뒤 사용</Badge>}
         <button onClick={addSample} data-testid="add-sample">가상 예시 거래 넣기</button>
         <button onClick={() => download(`demo-nearby-trades.csv`, demoCsv(), "text/csv;charset=utf-8")}>가상 예시 CSV 내려받기</button>
       </div>

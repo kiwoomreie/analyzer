@@ -14,6 +14,10 @@ export interface SessionInfo {
     launchMaxBodyBytes: number;
     serverPersistentStorage: "disabled";
     externalAi: "disabled";
+    /** 서버리스(Vercel) 배포 표시. 로컬 서버는 없음 */
+    hosting?: "serverless";
+    /** 서버리스 배포: 자동 조회는 접속 비밀번호 로그인 후에만 */
+    auth?: { required: boolean; ready: boolean; signedIn: boolean };
   };
 }
 
@@ -35,6 +39,20 @@ export async function getSession(): Promise<SessionInfo | null> {
   }
 }
 export const getSessionError = () => sessionError;
+/** 세션 정보를 다시 받음(로그인·로그아웃 후) */
+export async function refreshSession(): Promise<SessionInfo | null> { session = null; return getSession(); }
+
+/** 서버리스 배포의 접속 비밀번호 로그인. 비밀번호는 이 요청 본문으로만 보내고 저장하지 않음 */
+export async function login(password: string): Promise<SessionInfo | null> {
+  const r = await fetch("/api/login", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ password }) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.message ?? `오류 ${r.status}`);
+  return refreshSession();
+}
+export async function logout(): Promise<SessionInfo | null> {
+  await fetch("/api/logout", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: "{}" }).catch(() => {});
+  return refreshSession();
+}
 
 async function write(method: string, path: string, body?: unknown) {
   const s = await getSession();

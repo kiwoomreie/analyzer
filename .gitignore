@@ -6,3 +6,4 @@ data/
 test-results
 .env
 .env.*
+.vercel

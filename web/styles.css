@@ -59,6 +59,7 @@ pre.report,pre.plain{white-space:pre-wrap;word-break:break-word;background:#fbfc
 code{background:#f0f2f5;padding:0 4px;border-radius:3px;font-size:12px}
 @media (max-width:900px){.grid3,.summary,.split,.map-wrap{grid-template-columns:1fr}}
 .dl-fallback{position:fixed;left:8px;right:8px;bottom:8px;z-index:50;background:#fff;border:1px solid #bbb;border-radius:8px;box-shadow:0 4px 18px rgba(0,0,0,.18);padding:10px;max-height:60vh;display:flex;flex-direction:column;gap:8px}.dl-head{display:flex;flex-wrap:wrap;gap:8px;align-items:center}.dl-fallback textarea{width:100%;min-height:180px;flex:1;font:12px/1.4 ui-monospace,monospace;box-sizing:border-box}
+.auth-bar{display:inline-flex;gap:6px;align-items:center;flex-wrap:wrap;margin-left:auto}.auth-bar input{width:12em}.bad-text{color:var(--bad)}
 @media print{.dl-fallback,.top,.view-head .actions,.toolbar,.section>summary,.banner,.summary,.view-head,.section:not(#sec-report),h4,.sec-body>p,.sec-body>.toolbar{display:none!important}
   .section{border:none}.sec-body{border:none;padding:0}pre.report{max-height:none;border:none;background:#fff;font-size:11px}body{background:#fff}}
 .start .addr-row{display:flex;gap:8px;margin:8px 0}

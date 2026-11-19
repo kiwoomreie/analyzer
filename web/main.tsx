@@ -1,6 +1,6 @@
 import { createRoot } from "react-dom/client";
 import { useEffect, useState } from "react";
-import { getSession, getSessionError, lookupPublicData, type SessionInfo } from "./api.ts";
+import { getSession, getSessionError, login, logout, lookupPublicData, type SessionInfo } from "./api.ts";
 import { draftStore, localStore, memoryDrafts } from "./store.ts";
 import { AnalysisView } from "./AnalysisView.tsx";
 import { currentPath, navigate, PREVIEW, withRun } from "./nav.ts";
@@ -30,6 +30,7 @@ function App() {
         {PREVIEW && <span className="badge tone-warn" data-testid="preview-badge" title="서버 없이 이 브라우저에서만 실행 — 저장도 이 브라우저에만 됨">서버 없는 웹 버전</span>}
         <a className="brand" href="/app" onClick={(e: any) => { e.preventDefault(); navigate("/app"); }}><b>{APP_NAME}</b></a>
         <span className="muted small">주소로 시작 · 입지 변화 / 실거래 비교 / 확인할 사항 · 협의체와 별도로 사용</span>
+        {sess?.config.auth?.required && <HostedAuth session={sess} onChange={setSess} />}
       </header>
       {m ? <AnalysisView key={path} storage={m[1] === "a" ? "server-temporary" : m[1] === "l" ? "browser-local" : "draft"} recKey={m[2]} session={sess} /> : <Home session={sess} />}
       <DownloadFallback />
@@ -172,6 +173,23 @@ function Home({ session }: { session: SessionInfo | null }) {
         </ul>
       </section>
     </main>
+  );
+}
+
+/** 서버리스 배포: 자동 조회용 접속 비밀번호 로그인(분석·저장·보고서는 로그인 없이도 사용) */
+function HostedAuth({ session, onChange }: { session: SessionInfo; onChange: (s: SessionInfo | null) => void }) {
+  const [pw, setPw] = useState("");
+  const [msg, setMsg] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const a = session.config.auth!;
+  if (!a.ready) return <span className="badge tone-warn" data-testid="auth-state">자동 조회 꺼짐(서버에 접속 비밀번호 미설정)</span>;
+  if (a.signedIn) return <span className="auth-bar" data-testid="auth-state"><span className="badge tone-ok">자동 조회 로그인됨</span> <button className="link" data-testid="logout" onClick={async () => onChange(await logout())}>로그아웃</button></span>;
+  return (
+    <form className="auth-bar" data-testid="auth-form" onSubmit={async (e: any) => { e.preventDefault(); if (!pw) return; setBusy(true); setMsg(null); try { onChange(await login(pw)); setPw(""); } catch (err) { setMsg((err as Error).message); } finally { setBusy(false); } }}>
+      <input type="password" autoComplete="current-password" placeholder="자동 조회 접속 비밀번호" aria-label="자동 조회 접속 비밀번호" value={pw} onChange={(e: any) => setPw(e.target.value)} data-testid="auth-password" />
+      <button type="submit" disabled={busy || !pw} data-testid="auth-login">{busy ? "확인 중…" : "로그인"}</button>
+      {msg && <span className="bad-text small" data-testid="auth-error">{msg}</span>}
+    </form>
   );
 }
 
