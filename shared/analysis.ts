@@ -109,6 +109,8 @@ export interface AnalysisResult {
   engineVersion: string; inputHash: string; asOf: string;
   /** v0.6.1: 실행 당시 수동 확인 그룹 관측 결과(그룹 관측 설정이 있을 때만, withRun에서 채움) */
   groupObservation?: import("./observation.ts").ObservationResult;
+  /** v0.8: 결과 카드 인용 근거의 실행 시점 스냅샷(withRun에서 채움). 이전 실행본에는 없음 → ‘당시 근거 상세 미보존’ */
+  citations?: import("./citations.ts").CitationSet;
   missing: MissingItem[];
   property: { address: string; exclusiveAreaM2: number | null; exclusivePyeong: number | null; buildYear: number | null; coordinatesText: string };
   events: EventResult[];

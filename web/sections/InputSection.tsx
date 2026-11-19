@@ -32,13 +32,13 @@ export function CoordField({ value, onChange, label = "좌표(위도, 경도)", 
   );
 }
 
-export function InputSection({ rec, update }: SectionProps) {
+export function InputSection({ rec, update, defaultOpen }: SectionProps) {
   const w = rec.working;
   const r = rec.runs[rec.runs.length - 1].result;
   const diff = diffWorking(rec.original.working, w);
   const rp = w.reviewPrice;
   return (
-    <Section id="sec-input" title="입력·세부 설정" summary={`${w.property.address} · 전용 ${w.property.exclusiveAreaM2 ? `${w.property.exclusiveAreaM2}㎡` : "미입력"} · 검토가격 ${rp ? `${rp.amount}${LABELS.moneyUnit[rp.unit]}` : "미입력"}`}>
+    <Section id="sec-input" defaultOpen={defaultOpen} title="입력·세부 설정" summary={`${w.property.address} · 전용 ${w.property.exclusiveAreaM2 ? `${w.property.exclusiveAreaM2}㎡` : "미입력"} · 검토가격 ${rp ? `${rp.amount}${LABELS.moneyUnit[rp.unit]}` : "미입력"}`}>
       <h4>대상</h4>
       <div className="form grid">
         <Text label="주소" value={w.property.address} onChange={(v) => update((x) => { x.property.address = v ?? ""; })} wide testId="f-address" />

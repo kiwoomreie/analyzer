@@ -8,6 +8,7 @@ import { loadConfig } from "../../server/config.ts";
 import { newManualRecord, type AnalysisRecord } from "../../shared/model.ts";
 import { withRun } from "../../shared/runs.ts";
 import { fixture } from "../helpers/observationFixture.ts";
+import { openSec, reveal, stepAware } from "../helpers/stepAware.ts";
 
 const PORT = 5285, BASE = `http://localhost:${PORT}`;
 let app: App, browser: Browser;
@@ -30,7 +31,7 @@ const saved = (page: Page, key: string) => page.evaluate((k) => JSON.parse(local
 
 test("기존 전후 관찰 표·새 그룹 패널 공존, 실행 기준 안내, 다시 실행 후 보고서 포함, 단위·내부키", async () => {
   const ctx = await browser.newContext();
-  const page = await ctx.newPage();
+  const page = stepAware(await ctx.newPage());
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   const w = fixture();
@@ -40,8 +41,9 @@ test("기존 전후 관찰 표·새 그룹 패널 공존, 실행 기준 안내, 
   const rec = { ...base, working: w };
   await openSaved(page, rec);
 
+  await openSec(page, "sec-results");
   assert.equal(await page.locator("[data-testid=observed-table]").count(), 1, "기존 입지 사건 전후 관찰 표 복원");
-  assert.match(await page.locator("#sec-market").innerText(), /마지막 분석 실행 #1 기준/);
+  assert.match(await page.locator("#sec-results").innerText(), /마지막 분석 실행 #1 기준/);
   assert.match(await page.locator("[data-testid=obs-run-status]").innerText(), /마지막 분석 실행\(#1\)에는 그룹 관측이 없습니다/);
   const panel = await page.locator("[data-testid=observation-panel]").innerText();
   assert.match(panel, /100만원/);
@@ -54,10 +56,11 @@ test("기존 전후 관찰 표·새 그룹 패널 공존, 실행 기준 안내, 
 
   await page.click("[data-testid=rerun]");
   await page.waitForSelector("[data-testid=obs-run-status]:has-text('같은 값입니다')");
-  await page.locator("#sec-report > summary").click();
+  await openSec(page, "sec-report");
   assert.match(await page.locator("[data-testid=report-preview]").innerText(), /수동 확인 그룹 관측 \(실행 #2 입력 기준/);
 
   // 그룹 변경 → 실행 결과와 다름 안내, 보고서는 실행 #2 값 유지
+  await page.click("[data-testid=step-2]"); // 숨은 단계의 체크박스는 접근성 트리에 없어 이름으로 찾을 수 없음
   await page.getByRole("checkbox", { name: "B 비교군", exact: true }).uncheck();
   assert.match(await page.locator("[data-testid=obs-run-status]").innerText(), /마지막 분석 실행\(#2\) 결과와 다릅니다/);
   assert.match(await page.locator("[data-testid=report-preview]").innerText(), /비교군 대비 관측 차이 \+10\.0%p/);
@@ -67,7 +70,7 @@ test("기존 전후 관찰 표·새 그룹 패널 공존, 실행 기준 안내, 
 
 test("수정 직후 바로 새로고침해도 마지막 수정이 저장됨(자동 저장 대기분 즉시 반영)", async () => {
   const ctx = await browser.newContext();
-  const page = await ctx.newPage();
+  const page = stepAware(await ctx.newPage());
   const rec = withRun(newManualRecord("lc_e2", fixture()), "manual");
   await openSaved(page, rec);
   await page.selectOption("[data-testid=obs-months]", "12");
@@ -85,7 +88,7 @@ test("수정 직후 바로 새로고침해도 마지막 수정이 저장됨(자�
 
 test("선택했던 단지가 현재 거래에 없으면 ‘현재 거래 없음’ 행·경고 표시, 선택 해제 가능, 삭제 후 다시 저장하지 않음", async () => {
   const ctx = await browser.newContext();
-  const page = await ctx.newPage();
+  const page = stepAware(await ctx.newPage());
   const w = fixture();
   w.transactions.forEach((t) => { if (t.complexName === "B") t.sggCd = "11110"; }); // 식별 정보 변경
   const rec = withRun(newManualRecord("lc_e3", w), "manual");
@@ -111,7 +114,7 @@ test("선택했던 단지가 현재 거래에 없으면 ‘현재 거래 없음�
 
 test("모바일 390px: 그룹 패널 가로 넘침 없음", async () => {
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
-  const page = await ctx.newPage();
+  const page = stepAware(await ctx.newPage());
   await openSaved(page, withRun(newManualRecord("lc_e4", fixture()), "manual"));
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth), 0);
   assert.ok(await page.locator("[data-testid=observation-panel]").isVisible());

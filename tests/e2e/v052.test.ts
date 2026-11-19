@@ -8,6 +8,7 @@ import { tmpdir } from "node:os";
 import { chromium, type Browser, type Page } from "playwright";
 import { createApp, type App } from "../../server/app.ts";
 import { loadConfig } from "../../server/config.ts";
+import { openSec, reveal, stepAware } from "../helpers/stepAware.ts";
 
 const PORT = 5281;
 let app: App, browser: Browser, dir: string;
@@ -29,7 +30,7 @@ function csv(name: string, g: number, c: number) {
   writeFileSync(p, rows.join("\n"));
   return p;
 }
-const open = async (page: Page, id: string) => { if ((await page.locator(`#${id}`).getAttribute("open")) === null) await page.click(`#${id} > summary`); await page.waitForTimeout(120); };
+const open = openSec;
 const importCsv = async (page: Page, p: string) => {
   await page.setInputFiles("[data-testid=csv-import]", p);
   await page.waitForSelector("[data-testid=market-msg]");
@@ -41,7 +42,7 @@ const report = async (page: Page) => { await open(page, "sec-report"); return (a
 
 test("동조건 2건·1건 사용자 제외 → 1건 해제(5~6건) → 전량 해제(범위 표시 사라짐) → 저장·다시 열기·보고서", async () => {
   const ctx = await browser.newContext();
-  const page = await ctx.newPage();
+  const page = stepAware(await ctx.newPage());
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await page.goto(`http://localhost:${PORT}/app`);
@@ -53,6 +54,7 @@ test("동조건 2건·1건 사용자 제외 → 1건 해제(5~6건) → 전량 �
   await open(page, "sec-market");
   await importCsv(page, csv("b1", 2, 0));
   // 거리 확인 입력 → 대표 단지
+  await openSec(page, "sec-results");
   await page.locator("[data-testid=complex-table] tr[data-status=needsCheck] td:nth-child(9) input").first().fill("300");
   // 첫 번째 5층 거래 사용자 제외
   const row5 = page.locator("[data-testid=tx-table] tbody tr").filter({ has: page.locator("td:nth-child(3)", { hasText: /^5$/ }) });
@@ -82,7 +84,7 @@ test("동조건 2건·1건 사용자 제외 → 1건 해제(5~6건) → 전량 �
 
 test("묶음 증가(2→3건, 해제 1건)는 범위 6~7건, 이후 전량 해제 시 확정", async () => {
   const ctx = await browser.newContext();
-  const page = await ctx.newPage();
+  const page = stepAware(await ctx.newPage());
   await page.goto(`http://localhost:${PORT}/app`);
   await page.fill("[data-testid=new-address]", "[가상] 시험시 시험동 2");
   await page.click("[data-testid=start]");
@@ -91,6 +93,7 @@ test("묶음 증가(2→3건, 해제 1건)는 범위 6~7건, 이후 전량 해�
   await page.fill("[data-testid=f-area]", "84");
   await open(page, "sec-market");
   await importCsv(page, csv("c1", 2, 0));
+  await openSec(page, "sec-results");
   await page.locator("[data-testid=complex-table] tr[data-status=needsCheck] td:nth-child(9) input").first().fill("300");
   const row5 = page.locator("[data-testid=tx-table] tbody tr").filter({ has: page.locator("td:nth-child(3)", { hasText: /^5$/ }) });
   await row5.first().locator("td:nth-child(9) input").fill("특수 거래");

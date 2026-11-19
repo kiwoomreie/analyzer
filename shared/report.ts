@@ -131,6 +131,13 @@ function appendix(rec: AnalysisRecord, r: AnalysisResult): string {
       "| 그룹 | 단지 | 사용 | 전/후 건수 | 면적구간 | 제외·미사용 이유 |", "|---|---|---|---|---|---|",
       ...g.usage.map((u) => `| ${u.group === "impact" ? "영향권" : "비교군"} | ${esc(u.label)} | ${u.used ? "사용" : "미사용"} | ${u.pre}/${u.post} | ${u.strata} | ${esc([u.reason, ...Object.entries(u.excluded).map(([k, n]) => `${k} ${n}건`)].filter(Boolean).join(" · ") || "-")} |`));
   }
+  L.push("", "### G. 인용 근거(이 실행 시점 기록)", "");
+  if (!r.citations) L.push("- 당시 근거 상세 미보존(v0.8 이전 실행) — 결과의 단지·사건 이름만 남아 있음");
+  else for (const c of r.citations.items) {
+    if (c.kind === "trade") L.push(`- [${c.id}] ${esc(c.title)} — 거리 ${dist(c.distanceM)} · 준공 ${c.buildYear ?? "미확인"} · 중위 ${fmtMan(c.medianPerM2)}/전용㎡ · 사용 거래 ${c.tradeTotal}건${c.tradeTotal > c.trades.length ? `(최근 ${c.trades.length}건 보존)` : ""}`);
+    else if (c.kind === "event") L.push(`- [${c.id}] ${esc(c.title)} — ${esc(c.summary)} · 일정 ${c.timeline.map((t) => `${t.type} ${t.date}(${t.status})`).join(", ")}`);
+    else L.push(`- [${c.id}] ${esc(c.title)} — ${esc(c.summary)} · 사용 단지 ${c.usage.filter((u) => u.used).length}/${c.usage.length}곳`);
+  }
   return L.join("\n");
 }
 

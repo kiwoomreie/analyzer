@@ -9,7 +9,7 @@ import type { WorkingInputs } from "../../shared/model.ts";
 type Kind = "summary" | "questions" | "draft" | "changes";
 const KINDS: [Kind, string][] = [["summary", "1페이지 검토 요약 + 근거 부록"], ["questions", "영업부서·시행사 확인 질문 초안"], ["draft", "보고서 초안(~임. 문체)"], ["changes", "분석 버전 간 변경표"]];
 
-export function ReportSection({ rec, setRec }: SectionProps) {
+export function ReportSection({ rec, setRec, defaultOpen }: SectionProps) {
   const r = rec.runs[rec.runs.length - 1].result;
   const [kind, setKind] = useState<Kind>("summary");
   const [note, setNote] = useState<string | undefined>();
@@ -24,7 +24,7 @@ export function ReportSection({ rec, setRec }: SectionProps) {
   const diffs = diffWorking(pick(left), pick(right));
 
   return (
-    <Section id="sec-report" title="보고서·변경 이력" summary={`분석 실행 ${rec.runs.length}회 · 저장 버전 ${rec.versions.length}개`}>
+    <Section id="sec-report" defaultOpen={defaultOpen} title="보고서·변경 이력" summary={`분석 실행 ${rec.runs.length}회 · 저장 버전 ${rec.versions.length}개`}>
       <div className="toolbar">
         <Select label="출력물" value={kind} options={KINDS} onChange={setKind} testId="report-kind" />
         <button onClick={() => download(`${base}.md`, md)} data-testid="dl-md">Markdown 내려받기</button>

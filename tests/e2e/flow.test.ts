@@ -9,6 +9,7 @@ import { createApp, type App } from "../../server/app.ts";
 import { loadConfig } from "../../server/config.ts";
 import { startHarness } from "../../examples/launcher-harness/server.ts";
 import { mockState, mockTransport } from "../helpers/mockPublicApi.ts";
+import { openSec, reveal, stepAware } from "../helpers/stepAware.ts";
 
 const APP_PORT = 5274, KEYED_PORT = 5276, HARNESS_PORT = 5275;
 const APP = `http://localhost:${APP_PORT}`;
@@ -35,11 +36,11 @@ async function startWith(page: Page, base: string, address = "[가상] 누리시
   await page.click("[data-testid=start]");
   await page.waitForSelector("[data-testid=summary]");
 }
-const open = async (page: Page, id: string) => { if ((await page.locator(`#${id}`).getAttribute("open")) === null) await page.click(`#${id} > summary`); await page.waitForTimeout(150); };
+const open = openSec;
 
 test("독립 사용: 주소 → 분석 → CSV·사건·거리 입력 → 재실행 → 저장 → 재열기(입력 보존) → 보고서", async () => {
   const ctx = await browser.newContext({ acceptDownloads: true });
-  const page = await ctx.newPage();
+  const page = stepAware(await ctx.newPage());
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await startWith(page, APP);
@@ -62,6 +63,7 @@ test("독립 사용: 주소 → 분석 → CSV·사건·거리 입력 → 재실
   assert.equal(await page.locator("[data-testid=no-comparables]").count(), 1);
   assert.match(await page.textContent("[data-testid=needs-check]") ?? "", /확인 필요 후보/);
   // 사용자가 거리를 확인해 입력한 단지만 대표로 선정
+  await openSec(page, "sec-results");
   const distInputs = page.locator("[data-testid=complex-table] tr[data-status=needsCheck] td:nth-child(9) input");
   for (const [i, d] of [[0, 300], [1, 500], [2, 2500]] as const) await distInputs.nth(i).fill(String(d));
   await page.click("[data-testid=rerun]");
@@ -94,7 +96,7 @@ test("독립 사용: 주소 → 분석 → CSV·사건·거리 입력 → 재실
 
 test("[2] 전체 삭제·재가져오기·재분석 반복: 화면이 깨지지 않고 ‘이전 결과·재분석 필요’ 표시, 중복 집계 없음", async () => {
   const ctx = await browser.newContext();
-  const page = await ctx.newPage();
+  const page = stepAware(await ctx.newPage());
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await startWith(page, APP);
@@ -110,6 +112,7 @@ test("[2] 전체 삭제·재가져오기·재분석 반복: 화면이 깨지지 
     await page.click("[data-testid=delete-all-tx]");
     await page.waitForSelector("[data-testid=stale-banner]");
     assert.equal(await page.locator("[data-testid=summary]").count(), 1);
+    await openSec(page, "sec-results");
     assert.ok((await page.locator("[data-testid=complex-table] tbody tr").count()) > 1); // 이전 결과(스냅샷) 표시 유지
     await open(page, "sec-report");
     assert.match(await page.textContent("[data-testid=report-preview]") ?? "", /요약/);
@@ -122,7 +125,7 @@ test("[2] 전체 삭제·재가져오기·재분석 반복: 화면이 깨지지 
 
 test("[모의 응답] 자동 조회 2회: 두 번째는 신규 0·중복 전량, 부분 실패 시 누락 가능 표시", async () => {
   const ctx = await browser.newContext();
-  const page = await ctx.newPage();
+  const page = stepAware(await ctx.newPage());
   await startWith(page, KEYED, "경기도 성남시 시험로 1");
   await open(page, "sec-market");
   const colText = await page.textContent("[data-testid=collection-report]") ?? "";
@@ -146,7 +149,7 @@ test("[5] 저장소 차단: 성공으로 처리하지 않고 오류와 JSON 내�
   await ctx.addInitScript(() => {
     Object.defineProperty(window, "localStorage", { get() { throw new DOMException("blocked", "SecurityError"); } });
   });
-  const page = await ctx.newPage();
+  const page = stepAware(await ctx.newPage());
   await page.goto(`${APP}/app`);
   await page.waitForSelector("[data-testid=storage-blocked]");
   await page.click("[data-testid=load-demo]");
@@ -161,7 +164,7 @@ test("[5] 저장소 차단: 성공으로 처리하지 않고 오류와 JSON 내�
 
 test("모바일 화면(390×844): 가로 넘침 없이 요약·대표 비교단지 표시", async () => {
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
-  const page = await ctx.newPage();
+  const page = stepAware(await ctx.newPage());
   await page.goto(`${APP}/app`);
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), "첫 화면 가로 넘침");
   await page.click("[data-testid=load-demo]");
@@ -173,9 +176,10 @@ test("모바일 화면(390×844): 가로 넘침 없이 요약·대표 비교단�
 
 test("[대기 기능] 하네스 버튼 1회 → 새 탭(opener null) → 자동 분석 1회, 원본 저장·협의체 요청 0건", async () => {
   const ctx = await browser.newContext();
-  const page = await ctx.newPage();
+  const page = stepAware(await ctx.newPage());
   await page.goto(`http://127.0.0.1:${HARNESS_PORT}/`);
-  const [tab] = await Promise.all([ctx.waitForEvent("page"), page.click("[data-testid=launch-button]")]);
+  const [tab0] = await Promise.all([ctx.waitForEvent("page"), page.click("[data-testid=launch-button]")]);
+  const tab = stepAware(tab0);
   await tab.waitForSelector("[data-testid=summary]");
   assert.equal(await tab.evaluate(() => window.opener), null);
   assert.match(tab.url(), /\/app\/a\/an_/);

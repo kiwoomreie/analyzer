@@ -2,7 +2,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { deleteTemp, getTemp, putTemp, type SessionInfo } from "./api.ts";
 import { draftStore, localStore, memoryDrafts } from "./store.ts";
 import { latestRun, navigate, withRun } from "./nav.ts";
-import { Badge, download, openSection, Rail } from "./components.tsx";
+import { Badge, download } from "./components.tsx";
+import { CiteBtn, EvidenceDrawer, type CiteTarget } from "./evidence.tsx";
+import { ObservationPanel } from "./sections/ObservationPanel.tsx";
+import { ObservationDetail, RunHistory } from "./sections/ResultExtras.tsx";
+import { citationIdForComplex, citationIdForEvent, OBS_CITATION_ID } from "../shared/citations.ts";
+import { LABELS } from "../shared/contract.ts";
 import { currentPriceView, observationView } from "../shared/priceView.ts";
 import { DATA_MODE_LABEL, migrateRecord, newKey, ORIGIN_LABEL, titleFor, type AnalysisRecord, type WorkingInputs } from "../shared/model.ts";
 import { makeBackup, scanWorking } from "../shared/importers.ts";
@@ -15,6 +20,9 @@ import { ReportSection } from "./sections/ReportSection.tsx";
 
 export type StorageKind = "server-temporary" | "browser-local" | "draft";
 
+/** 사용자가 ‘동작 줄이기’를 켰는지 */
+export const reduceMotion = () => { try { return window.matchMedia("(prefers-reduced-motion: reduce)").matches; } catch { return false; } };
+
 export interface SectionProps {
   rec: AnalysisRecord;
   /** 비동기 작업(조회·가져오기)이 끝난 시점의 최신 기록 — 오래된 사본으로 덮어쓰지 않기 위함 */
@@ -22,6 +30,10 @@ export interface SectionProps {
   update: (fn: (w: WorkingInputs) => void) => void;
   setRec: (r: AnalysisRecord) => void;
   session: SessionInfo | null;
+  /** 단계 화면에서 처음부터 펼쳐 둘지 */
+  defaultOpen?: boolean;
+  /** 실거래 영역 중 자료 입력(①) 또는 결과 상세(③) */
+  part?: "data" | "results";
 }
 
 const STORAGE_LABEL: Record<StorageKind, string> = {
@@ -36,7 +48,19 @@ export function AnalysisView({ storage, recKey, session }: { storage: StorageKin
   const [saveState, setSaveState] = useState<string>("");
   const [saveError, setSaveError] = useState<string | null>(null);
   const [memoryOnly, setMemoryOnly] = useState(false);
-  const [railCur, setRailCur] = useState<string | undefined>();
+  const [step, setStep] = useState<number>(() => { try { return Number(sessionStorage.getItem(`la.step.${recKey}`)) || 1; } catch { return 1; } });
+  const [cite, setCite] = useState<CiteTarget | null>(null);
+  // 브라우저 ‘뒤로/앞으로’로 단계 이동(같은 분석 안에서만). 현재 단계를 첫 기록에 남겨 둠
+  useEffect(() => {
+    try { if (history.state?.laKey !== recKey) history.replaceState({ ...(history.state ?? {}), laStep: step, laKey: recKey }, "", location.href); } catch { /* 무시 */ }
+    const on = (e: PopStateEvent) => {
+      const st = e.state?.laStep;
+      if (e.state?.laKey === recKey && typeof st === "number" && st >= 1 && st <= 4) { setStep(st); try { sessionStorage.setItem(`la.step.${recKey}`, String(st)); } catch { /* 무시 */ } }
+    };
+    window.addEventListener("popstate", on);
+    return () => window.removeEventListener("popstate", on);
+  }, [recKey]);
+  const returnTo = useRef<{ el: HTMLElement; y: number } | null>(null);
   const timer = useRef<any>(null);
   /** 항상 최신 기록을 가리킴(비동기 응답이 오래된 화면 상태로 덮어쓰지 않도록) */
   const recRef = useRef<AnalysisRecord | null>(null);
@@ -122,6 +146,7 @@ export function AnalysisView({ storage, recKey, session }: { storage: StorageKin
     if (err) { setSaveError(err); setSaveState("저장 실패"); return; }
     cancelPending();
     if (storage === "draft") draftStore.remove(rec.key);
+    try { sessionStorage.setItem(`la.step.${local.key}`, String(step)); } catch { /* 무시 */ }
     navigate(`/app/l/${local.key}`);
   };
   const remove = async () => {
@@ -132,68 +157,98 @@ export function AnalysisView({ storage, recKey, session }: { storage: StorageKin
     navigate("/app");
   };
   const props: SectionProps = { rec, getRec: () => recRef.current, update, setRec, session };
-
   const w0 = rec.working;
-  const steps = [
-    { id: "sec-input", label: "입력·세부 설정", done: !!w0.property.exclusiveAreaM2 },
-    { id: "sec-events", label: "입지 사건·근거", done: w0.events.length > 0 },
-    { id: "sec-market", label: "실거래·비교단지", done: w0.transactions.length > 0 },
-    { id: "sec-report", label: "보고서", done: rec.runs.length > 0 && !stale },
+  const rp = w0.reviewPrice;
+  const runNow = () => setRec(withRun(recRef.current ?? rec, "manual"));
+  const goStep = (n: number, fromHistory = false) => {
+    if (n === step) return;
+    // 브라우저 ‘뒤로 가기’로 이전 단계에 돌아오도록 단계마다 기록(같은 주소, 상태만 다름). 입력은 기록(rec)에 있어 그대로 남음
+    if (!fromHistory) try { history.pushState({ ...(history.state ?? {}), laStep: n, laKey: recKey }, "", location.href); } catch { /* 무시 */ }
+    setStep(n); try { sessionStorage.setItem(`la.step.${recKey}`, String(n)); } catch { /* 무시 */ } requestAnimationFrame(() => { const bar = document.getElementById("step-top"); if (bar && bar.getBoundingClientRect().top < 0) window.scrollTo({ top: 0, behavior: reduceMotion() ? "auto" : "smooth" }); }); };
+  const openCite = (id: string, opener: HTMLElement, run = lastRun, result = r, fallbackTitle = id) => { returnTo.current = { el: opener, y: window.scrollY }; setCite({ id, run, result, fallbackTitle }); };
+  const closeCite = () => { setCite(null); const t = returnTo.current; requestAnimationFrame(() => { if (t) { window.scrollTo({ top: t.y, behavior: "auto" }); t.el.focus({ preventScroll: true }); t.el.classList.add("cite-back"); setTimeout(() => t.el.classList.remove("cite-back"), 1200); } }); };
+  const citeFor = (id: string | null, title: string) => id ? <CiteBtn id={id} onOpen={(el) => openCite(id, el, lastRun, r, title)} /> : null;
+  const STEPS = [
+    { n: 1, label: "대상·자료", eyebrow: "01 / DATA", title: "대상과 자료를 정리합니다", sub: "주소 하나로 시작합니다. 전용면적·검토가격·일정은 선택 입력이며, 없으면 그 값이 필요한 비교만 보류합니다.", done: w0.transactions.length > 0 },
+    { n: 2, label: "입지·비교 조건", eyebrow: "02 / CONDITIONS", title: "입지 사건과 비교 조건을 고릅니다", sub: "사건과 실제 기준일, 전후 기간, 영향권·비교군을 직접 확인해 선택합니다. 자동 반경 선정은 하지 않습니다.", done: !!w0.observation?.impact?.length },
+    { n: 3, label: "분석 결과", eyebrow: "03 / RESULT", title: "결과와 근거를 함께 봅니다", sub: "요약 세 가지를 먼저 보고, [실거래]·[입지] 근거를 열어 확인한 뒤 읽던 곳으로 돌아옵니다.", done: !stale },
+    { n: 4, label: "보고서·저장", eyebrow: "04 / REPORT", title: "실행본을 저장하고 보고서로 남깁니다", sub: "분석 실행 시점의 입력·근거·결과를 함께 남기며, 이후 입력 변경이 지난 결과를 덮어쓰지 않습니다.", done: storage === "browser-local" },
   ];
-  return (
-    <div className="workspace">
-    <Rail eyebrow="PRECISION. PERSPECTIVE. CONFIDENCE." title={<>근거를 놓고,<br />차분히 봅니다.</>}
-      lead={<>요약 세 가지를 먼저 보고<br />필요한 단계만 펼쳐 확인합니다.</>}
-      steps={steps} current={railCur} onStep={(id) => { setRailCur(id); openSection(id); }}
-      foot={<>관찰된 변화는 인과효과가 아닙니다.<br />적정가격·예상 상승률을 산정하지 않습니다.</>} />
-    <main className="view">
-      <div className="hero" data-testid="hero">
-        <div className="hero-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 20V6l7-3v17M11 20V9l9 3v8M4 20h17M7 9h1M7 12h1M7 15h1M14 14h1M17 14h1M14 17h1M17 17h1" fill="none" stroke="currentColor" strokeWidth="1.3" /></svg></div>
-        <div className="hero-main">
-          <div className="hero-eyebrow">검토 중인 분석 · {STORAGE_LABEL[storage]}</div>
-          <h1 data-testid="analysis-title">{rec.title}</h1>
-          <div className="hero-sub">{rec.working.property.displayName ? `${rec.working.property.address} · ` : ""}전용 {rec.working.property.exclusiveAreaM2 ? `${rec.working.property.exclusiveAreaM2}㎡` : "미입력"} · 기준일 {rec.working.asOf}</div>
-        </div>
-        <button className="hero-link" onClick={() => { setRailCur("sec-input"); openSection("sec-input"); }}>입력 수정</button>
-      </div>
-      <div className="view-head">
-        <div>
-          <div className="chips">
-            <span className="chip">{ORIGIN_LABEL[rec.origin.kind]}</span>
-            <span className="chip">{STORAGE_LABEL[storage]}</span>
-            {rec.origin.kind === "demo" && <Badge tone="bad">가상 자료 — 실제 판단에 사용 금지</Badge>}
-            {stale && <span className="chip chip-warn">재분석 필요 · 입력 변경</span>}
-          </div>
-          <dl className="meta" data-testid="meta">
-            <dt>분석 기준일</dt><dd data-testid="meta-asof">{rec.working.asOf}</dd>
-            <dt>표시 단위</dt><dd>금액 만원(원 단위 계산) · 면적 전용㎡ · 1평=400/121㎡</dd>
-            <dt>최근 분석</dt><dd data-testid="run-info">#{lastRun.runNo} · {lastRun.at}{stale && <b className="warn-text"> · 입력이 바뀌었습니다. ‘분석 다시 실행’을 누르십시오.</b>}</dd>
-          </dl>
-        </div>
-        <div className="actions">
-          <button onClick={() => setRec(withRun(recRef.current ?? rec, "manual"))} data-testid="rerun" className={stale ? "primary" : ""}>분석 다시 실행</button>
-          {storage !== "browser-local" && <button onClick={saveToBrowser} data-testid="save-browser" className="primary">이 브라우저에 저장</button>}
-          <button onClick={() => download(`apartment-analysis-${seoulToday()}.json`, JSON.stringify(makeBackup([rec], seoulNowIso()), null, 1), "application/json")} data-testid="export-json">JSON 내보내기</button>
-          <button onClick={remove} className="danger" data-testid="delete">삭제</button>
-          <small className="muted" data-testid="save-state">{saveState || (storage === "draft" ? "아직 저장 전" : "")}</small>
-        </div>
-      </div>
+  const cur = STEPS[step - 1];
+  const fact = (label: string, v: string | null | undefined, testId?: string) => <span className="fact"><span className="fact-l">{label}</span> <b data-testid={testId} className={v ? "" : "miss"}>{v || "미입력"}</b></span>;
 
-      {saveError && <div className="banner bad" data-testid="save-error"><b>저장되지 않았습니다.</b> {saveError} <button onClick={() => download(`apartment-analysis-${seoulToday()}.json`, JSON.stringify(makeBackup([rec], seoulNowIso()), null, 1), "application/json")}>지금 JSON으로 내보내기</button></div>}
-      {memoryOnly && <div className="banner warn small" data-testid="memory-only">탭 저장소를 쓸 수 없어 이 분석은 메모리에만 있습니다. 새로고침하거나 탭을 닫으면 사라지니 JSON으로 내보내십시오.</div>}
-      {stale && <div className="banner bad" data-testid="stale-banner"><b>이전 결과 · 재분석 필요</b> — 아래 결과와 보고서는 #{lastRun.runNo} 실행({lastRun.at}) 당시 입력 기준입니다. 이후 입력이 바뀌었으니 ‘분석 다시 실행’을 누르십시오.</div>}
-      {r.missing.length > 0 && (
+  return (
+    <div className="view-wrap">
+      <section className="deal-head" data-testid="hero">
+        <div className="deal-inner">
+          <div className="deal-main">
+            <h1 data-testid="analysis-title">{rec.title}</h1>
+            <div className="deal-facts" data-testid="meta">
+              {fact("주소", w0.property.address)}
+              {fact("사업지명", w0.property.displayName)}
+              {fact("전용면적", w0.property.exclusiveAreaM2 ? `${w0.property.exclusiveAreaM2}㎡` : null)}
+              {fact("검토가격", rp ? `${rp.amount.toLocaleString("ko-KR")}${LABELS.moneyUnit[rp.unit]}(${LABELS.priceBasis[rp.basis]})` : null)}
+              {fact("분석 기준일", w0.asOf, "meta-asof")}
+            </div>
+          </div>
+          <div className="deal-side">
+            <div className="deal-run" data-testid="run-info">실행 #{lastRun.runNo} · {lastRun.at.slice(0, 16).replace("T", " ")}{stale ? <b className="stale-tag"> · 이전 결과 · 재분석 필요</b> : <span> · 현재 입력 기준</span>}</div>
+            <div className="deal-actions">
+              <button onClick={runNow} data-testid="rerun" className={stale ? "plum" : "ghost-dark"}>분석 다시 실행</button>
+              {storage !== "browser-local" && <button onClick={saveToBrowser} data-testid="save-browser" className="ghost-dark">이 브라우저에 저장</button>}
+              <span className="chip-dark">{STORAGE_LABEL[storage]}</span>
+            </div>
+            <small className="deal-save" data-testid="save-state">{saveState || (storage === "draft" ? "아직 저장 전" : "")}</small>
+          </div>
+        </div>
+      </section>
+
+      <main className="view stepped">
+        <nav className="stepbar" aria-label="분석 단계" id="step-top">
+          {STEPS.map((s) => (
+            <button key={s.n} className={`stepbar-item${s.n === step ? " on" : ""}${s.done ? " done" : ""}`} aria-current={s.n === step ? "step" : undefined} onClick={() => goStep(s.n)} data-testid={`step-${s.n}`}>
+              <span className="sb-no">{String(s.n).padStart(2, "0")}</span><span className="sb-label">{s.label}</span>{s.n < 4 && <span className="sb-chev" aria-hidden="true">›</span>}
+            </button>
+          ))}
+        </nav>
+        <header className="step-head">
+          <p className="eyebrow-plum">{cur.eyebrow}</p>
+          <h2 className="step-title">{cur.title}</h2>
+          <p className="step-sub">{cur.sub}</p>
+        </header>
+
+        {saveError && <div className="banner bad" data-testid="save-error"><b>저장되지 않았습니다.</b> {saveError} <button onClick={() => download(`apartment-analysis-${seoulToday()}.json`, JSON.stringify(makeBackup([rec], seoulNowIso()), null, 1), "application/json")}>지금 JSON으로 내보내기</button></div>}
+        {memoryOnly && <div className="banner warn small" data-testid="memory-only">탭 저장소를 쓸 수 없어 이 분석은 메모리에만 있습니다. 새로고침하거나 탭을 닫으면 사라지니 JSON으로 내보내십시오.</div>}
+        {stale && <div className="banner bad" data-testid="stale-banner"><b>이전 결과 · 재분석 필요</b> — 아래 결과와 보고서는 #{lastRun.runNo} 실행({lastRun.at}) 당시 입력 기준입니다. 이후 입력이 바뀌었으니 ‘분석 다시 실행’을 누르십시오.</div>}
+        {r.missing.length > 0 && (
         <div className="banner warn small" data-testid="missing">
           <b>추가하면 더 분석되는 항목</b> <span className="muted">(없어도 가능한 분석은 표시됨)</span>
           <ul>{r.missing.map((m) => <li key={m.field}>{m.label} — {m.affects}</li>)}</ul>
         </div>
       )}
 
+
+        <div className="step-panel" data-step="1" hidden={step !== 1}>
+          <div className="chips">
+            <span className="chip">{ORIGIN_LABEL[rec.origin.kind]}</span>
+            {rec.origin.kind === "demo" && <Badge tone="bad">가상 자료 — 실제 판단에 사용 금지</Badge>}
+            <span className="chip">금액 만원(원 단위 계산) · 면적 전용㎡ · 1평=400/121㎡</span>
+          </div>
+          <InputSection {...props} defaultOpen />
+          <MarketSection {...props} part="data" />
+        </div>
+
+        <div className="step-panel" data-step="2" hidden={step !== 2}>
+          <EventsSection {...props} defaultOpen />
+          <div className="card"><ObservationPanel rec={rec} update={update} /></div>
+        </div>
+
+        <div className="step-panel" data-step="3" hidden={step !== 3}>
       <div className="summary" data-testid="summary">
         <div className="card sblock" data-testid="summary-location">
           <p className="step-eyebrow">01</p><h2>입지 변화 {stale && <Badge tone="bad">이전 결과</Badge>}</h2>
           {!r.summary.location.length ? <p className="muted">입력된 입지 사건 없음 — 아래 ‘입지 사건·근거 상세’에서 추가</p> : (
-            <ul>{r.summary.location.map((l) => <li key={l.key}><b>{l.text}</b>{l.detail && <div className="muted small">{l.detail}</div>}</li>)}</ul>
+            <ul>{r.summary.location.map((l) => <li key={l.key}><b>{l.text}</b> {l.key === "supply" ? r.events.filter((e) => e.category === "supply").map((e) => <span key={e.key}>{citeFor(citationIdForEvent(r, e.key), e.name)} </span>) : citeFor(citationIdForEvent(r, l.key), l.text)}{l.detail && <div className="muted small">{l.detail}</div>}</li>)}</ul>
           )}
         </div>
         <div className="card sblock" data-testid="summary-price">
@@ -201,7 +256,7 @@ export function AnalysisView({ storage, recKey, session }: { storage: StorageKin
           <h3 className="sub-h">현재 검토가격 비교</h3>
           <dl className="kv" data-testid="price-current">
             <dt>검토가격</dt><dd>{lr.input.reviewPrice ? <>{pv.review.status === "held" && <Badge tone="muted">보류</Badge>} 세대당 총액 {pv.review.household} · {pv.review.perPyeong}<div className="muted small">{pv.review.perM2} · {pv.review.label} · 기준일 {pv.review.basisDate}{pv.review.note ? ` — ${pv.review.note}` : ""}</div></> : <><Badge tone="muted">미입력</Badge> <span className="small">검토가격이 없어 가격 비교만 보류</span></>}</dd>
-            <dt>인근 유사 거래</dt><dd>{pv.market.complexes ? <>대표 비교단지 {pv.market.complexes}곳(최대 5곳, 부족해도 채우지 않음) · {pv.market.count}건 중위 {pv.market.perPyeong}<div className="muted small">{pv.market.perM2} · 세대당 환산 {pv.market.householdEquiv} · 단지별 중위 범위 {pv.market.range} · {pv.market.window} · {pv.market.area}</div></> : <span className="small">조건에 맞는 대표 비교단지 없음 — 거리 확인·거래 수·면적·준공연도 기준을 충족한 단지가 없어 채우지 않음 <span className="muted">({pv.market.window} · {pv.market.area})</span></span>}</dd>
+            <dt>인근 유사 거래</dt><dd>{pv.market.complexes ? <>대표 비교단지 {pv.market.complexes}곳(최대 5곳, 부족해도 채우지 않음) · {pv.market.count}건 중위 {pv.market.perPyeong} <span className="cites">{r.market.comparables.map((c) => <span key={c.complexKey}>{citeFor(citationIdForComplex(r, c.complexKey), c.name)}</span>)}</span><div className="muted small">{pv.market.perM2} · 세대당 환산 {pv.market.householdEquiv} · 단지별 중위 범위 {pv.market.range} · {pv.market.window} · {pv.market.area}</div></> : <span className="small">조건에 맞는 대표 비교단지 없음 — 거리 확인·거래 수·면적·준공연도 기준을 충족한 단지가 없어 채우지 않음 <span className="muted">({pv.market.window} · {pv.market.area})</span></span>}</dd>
             <dt>검토가격 비교</dt><dd data-testid="price-compare">{r.price.status === "held" ? <><Badge tone="muted">보류</Badge> {r.price.text.replace(/^가격 판단 보류 — /, "")}</> : r.price.text}</dd>
           </dl>
           <p className="muted small">{pv.disclaimer}</p>
@@ -211,7 +266,7 @@ export function AnalysisView({ storage, recKey, session }: { storage: StorageKin
               <p className="small">영향권·비교군 미설정 — ‘실거래·비교단지 상세’에서 사건·실제 기준일·전후 기간·단지를 선택하고 분석을 다시 실행하십시오.<span className="muted"> 참고(대표 비교단지 발표 전후 단일값): {r.summary.price.observed.replace(/^관찰된 변화: ?/, "")}</span></p>
             ) : (
               <>
-                <p className="small muted">{ov.headline}</p>
+                <p className="small muted">{ov.headline} {citeFor(OBS_CITATION_ID, "수동 확인 그룹 관측")}</p>
                 <ul className="obs-lines"><li>{ov.impact}</li><li>{ov.control}</li></ul>
                 {ov.difference ? <p className="obs-diff" data-testid="obs-diff"><b>{ov.difference}</b> <span className="muted small">(인과효과 아님 · 관측된 차이)</span></p>
                   : <p className="small warn-text" data-testid="obs-diff-hidden">유효한 비교가 아니어서 비교군 대비 차이를 표시하지 않습니다.</p>}
@@ -237,9 +292,10 @@ export function AnalysisView({ storage, recKey, session }: { storage: StorageKin
         <h2>대표 비교단지 {stale && <Badge tone="bad">이전 결과</Badge>} <span className="muted small">최대 5개 · 비교하기 어려운 단지는 채우지 않음 · 최근 {r.market.recentWindow.months}개월({r.market.recentWindow.start}~{r.market.recentWindow.end}){r.market.areaFilter ? ` · 전용 ${fmtNum(r.market.areaFilter.minM2, 1)}~${fmtNum(r.market.areaFilter.maxM2, 1)}㎡` : " · 면적 필터 없음"}</span></h2>
         {!r.market.comparables.length ? <p className="muted" data-testid="no-comparables">반경 내 거리가 확인된 비교 가능 단지 없음{lr.input.transactions.length ? " — 제외·확인 필요 사유는 ‘실거래·비교단지 상세’에서 확인" : " — 실거래 자료 없음"}</p> : (
           <table className="tbl">
-            <thead><tr><th>단지</th><th>준공연도(본건 대비)</th><th>거리</th><th>최근 거래</th><th>거래 전용면적</th><th>중위 단가(만원/전용㎡)</th><th>최근 계약</th><th>선정 이유</th><th>자료</th></tr></thead>
+            <thead><tr><th>근거</th><th>단지</th><th>준공연도(본건 대비)</th><th>거리</th><th>최근 거래</th><th>거래 전용면적</th><th>중위 단가(만원/전용㎡)</th><th>최근 계약</th><th>선정 이유</th><th>자료</th></tr></thead>
             <tbody>{r.market.comparables.map((c) => (
               <tr key={c.complexKey}>
+                <td>{citeFor(citationIdForComplex(r, c.complexKey), c.name)}</td>
                 <td className="name-cell"><b>{c.name}</b>{c.dong ? <div className="muted small">{c.dong}</div> : null}</td>
                 <td>{c.buildYear ?? "미확인"}{c.differences.buildYearDiff !== null ? ` (${c.differences.buildYearDiff > 0 ? "+" : ""}${c.differences.buildYearDiff}년)` : ""}</td>
                 <td>{`${Math.round(c.distanceM!).toLocaleString("ko-KR")}m`}</td>
@@ -258,11 +314,40 @@ export function AnalysisView({ storage, recKey, session }: { storage: StorageKin
         {r.price.reviewPerM2 !== null && <p className="small">본건 검토가격: {fmtMan(r.price.reviewPerM2)}/전용㎡ ({r.price.basisDate === "기준일 미입력" ? "가격 기준일 미입력" : `가격 기준일 ${r.price.basisDate}`})</p>}
       </div>
 
-      <InputSection {...props} />
-      <EventsSection {...props} />
-      <MarketSection {...props} />
-      <ReportSection {...props} />
-    </main>
+
+          <ObservationDetail r={r} onCite={(el) => openCite(OBS_CITATION_ID, el, lastRun, r, "수동 확인 그룹 관측")} />
+          <MarketSection {...props} part="results" />
+        </div>
+
+        <div className="step-panel" data-step="4" hidden={step !== 4}>
+          <div className="card">
+            <h3 className="card-title">저장·내보내기</h3>
+            <div className="toolbar">
+              <button onClick={runNow} className={stale ? "primary" : ""} data-testid="rerun-4">분석 다시 실행</button>
+              {storage !== "browser-local" && <button onClick={saveToBrowser} className="primary" data-testid="save-browser-4">이 브라우저에 저장</button>}
+              <button onClick={() => download(`apartment-analysis-${seoulToday()}.json`, JSON.stringify(makeBackup([rec], seoulNowIso()), null, 1), "application/json")} data-testid="export-json">JSON 내보내기</button>
+              <button onClick={remove} className="danger" data-testid="delete">삭제</button>
+            </div>
+            <p className="small muted">저장된 실행 결과는 자동으로 덮어쓰지 않습니다. 입력을 바꾸면 ‘이전 결과 · 재분석 필요’로 표시되고, ‘분석 다시 실행’을 눌러야 새 실행본이 추가됩니다.</p>
+          </div>
+          <RunHistory rec={rec} onCite={(id, el, run) => openCite(id, el, run, run.result, id)} />
+          <ReportSection {...props} defaultOpen />
+        </div>
+
+        <nav className="step-nav" aria-label="단계 이동">
+          {step > 1 ? <button className="ghost" onClick={() => goStep(step - 1)} data-testid="step-prev">← 이전 단계</button> : <span />}
+          <span className="step-count" data-testid="step-count">{String(step).padStart(2, "0")} / 04</span>
+          {step === 1 && <button className="navy" onClick={() => goStep(2)} data-testid="step-next">입지·비교 조건으로 →</button>}
+          {step === 2 && <button className="navy" onClick={() => { runNow(); goStep(3); }} data-testid="step-next">분석 실행하고 결과 보기 →</button>}
+          {step === 3 && <button className="navy" onClick={() => goStep(4)} data-testid="step-next">보고서·저장으로 →</button>}
+          {step === 4 && <button className="navy" onClick={() => goStep(3)} data-testid="step-next">결과로 돌아가기 ←</button>}
+        </nav>
+        <footer className="view-foot">
+          <span>[가상] 표시는 가상 사례 · 금액 만원(원 단위 계산) · 관측 차이는 인과효과가 아니며 적정가격을 산정하지 않음</span>
+          <span className="vf-step">{String(step).padStart(2, "0")} / 04</span>
+        </footer>
+      </main>
+      <EvidenceDrawer target={cite} onClose={closeCite} />
     </div>
   );
 }

@@ -8,6 +8,7 @@ import { chromium, type Browser } from "playwright";
 import { startVercelLocal } from "../helpers/vercelLocal.ts";
 import { hostedEnv, hostedHandlers } from "../../server/hosted.ts";
 import { mockTransport } from "../helpers/mockPublicApi.ts";
+import { openSec, reveal, stepAware } from "../helpers/stepAware.ts";
 
 const PORT = 5289, BASE = `http://localhost:${PORT}`;
 let server: Server, browser: Browser;
@@ -35,7 +36,7 @@ test("Vercel 빌드: / → /app, 보안 헤더, /launch 대기, 키가 화면·�
 
 test("로그인 전에는 자동 조회 비활성, 틀린 비밀번호 안내, 로그인 후 모의 자동 조회로 거래 반영·저장", async () => {
   const ctx = await browser.newContext();
-  const page = await ctx.newPage();
+  const page = stepAware(await ctx.newPage());
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await page.goto(`${BASE}/app`);
@@ -43,7 +44,7 @@ test("로그인 전에는 자동 조회 비활성, 틀린 비밀번호 안내, �
   await page.fill("[data-testid=new-address]", "경기도 성남시 분당구 정자동 1");
   await page.click("[data-testid=start]");
   await page.waitForSelector("[data-testid=summary]");
-  await page.locator("#sec-market > summary").click();
+  await openSec(page, "sec-market");
   assert.equal(await page.isDisabled("[data-testid=public-lookup]"), true);
   assert.match(await page.locator("#sec-market").innerText(), /접속 비밀번호로 로그인한 뒤 사용/);
 

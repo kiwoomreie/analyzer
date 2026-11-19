@@ -9,6 +9,7 @@ import { chromium, type Browser, type Page } from "playwright";
 import { observeGroups } from "../../shared/observation.ts";
 import { fmtMan, fmtPp } from "../../shared/units.ts";
 import { fmtChange } from "../../shared/priceView.ts";
+import { openSec, reveal, stepAware } from "../helpers/stepAware.ts";
 
 const PORT = 5293, BASE = `http://localhost:${PORT}`;
 const CSV = "examples/sample-data/demo-nearby-trades.csv";
@@ -22,13 +23,13 @@ before(async () => {
 });
 after(async () => { await browser.close(); server.close(); });
 
-const open = async (page: Page, id: string) => { if ((await page.locator(`#${id}`).getAttribute("open")) === null) await page.click(`#${id} > summary`); await page.waitForTimeout(120); };
+const open = openSec;
 const shot = async (page: Page, name: string, sel?: string) => { const dir = process.env.SHOT_DIR; if (!dir) return; if (sel) await page.locator(sel).screenshot({ path: `${dir}/${name}.png` }); else await page.screenshot({ path: `${dir}/${name}.png`, fullPage: false }); };
 
 for (const [vp, size] of [["pc", { width: 1440, height: 900 }], ["m390", { width: 390, height: 844 }]] as const) {
   test(`[${vp}] 주소 → CSV → 사건 → 영향권·비교군 → 분석 → 저장·재열기 → 보고서`, async () => {
     const ctx = await browser.newContext({ viewport: size, acceptDownloads: true });
-    const page = await ctx.newPage();
+    const page = stepAware(await ctx.newPage());
     const errors: string[] = [];
     page.on("pageerror", (e) => errors.push(e.message));
     await page.goto(BASE);
@@ -73,6 +74,7 @@ for (const [vp, size] of [["pc", { width: 1440, height: 900 }], ["m390", { width
     const runG = saved.runs.at(-1).result.groupObservation;
     assert.equal(JSON.stringify(runG.impact), JSON.stringify(g.impact), "실행본 저장값 = 재계산값");
     const sum = await page.locator("[data-testid=obs-summary]").innerText();
+    const sumText = await page.locator("[data-testid=obs-summary]").textContent();
     assert.ok(sum.includes(`영향권 ${fmtChange(g.impact.changePct)}`), `영향권 변동률 ${fmtChange(g.impact.changePct)}`);
     assert.ok(sum.includes(`비교군 ${fmtChange(g.control.changePct)}`));
     assert.ok(sum.includes(`${fmtMan(g.impact.pre.medianPerM2)}→${fmtMan(g.impact.post.medianPerM2)}`));
@@ -85,7 +87,7 @@ for (const [vp, size] of [["pc", { width: 1440, height: 900 }], ["m390", { width
     // 다시 열기
     await page.reload();
     await page.waitForSelector("[data-testid=summary]");
-    assert.equal(await page.locator("[data-testid=obs-summary]").innerText(), sum, "다시 열어도 같은 결과");
+    assert.equal(await page.locator("[data-testid=obs-summary]").textContent(), sumText, "다시 열어도 같은 결과");
     await open(page, "sec-market");
     await page.locator("[data-testid=obs-usage] > summary").click();
     assert.match(await page.locator("[data-testid=obs-usage]").innerText(), /가격 기준: 전용㎡당 거래가[\s\S]*사용/);
@@ -101,7 +103,7 @@ for (const [vp, size] of [["pc", { width: 1440, height: 900 }], ["m390", { width
     // 입력 변경 → 이전 결과·재분석 필요, 보고서는 실행본 유지
     await panel.locator("[data-testid=obs-months]").selectOption("3");
     await page.waitForSelector("[data-testid=stale-banner]");
-    assert.equal(await page.locator("[data-testid=obs-summary]").innerText(), sum, "요약은 실행본 기준 유지");
+    assert.equal(await page.locator("[data-testid=obs-summary]").textContent(), sumText, "요약은 실행본 기준 유지");
     assert.match(await page.locator("[data-testid=report-preview]").innerText(), /실행 #2 입력 기준/);
     const over = await page.evaluate(() => { const w = innerWidth; return [document.documentElement.scrollWidth - w, [...document.querySelectorAll("body *")].filter((e) => e.getBoundingClientRect().right > w + 1 && !e.parentElement?.closest(".tbl,pre")).slice(0, 6).map((e) => `${e.tagName}.${e.className}|${(e.textContent ?? "").slice(0, 40)}`)]; });
     assert.equal(over[0], 0, `가로 넘침 없음 ${JSON.stringify(over[1])}`);

@@ -6,12 +6,13 @@ import { loadConfig } from '../../server/config.ts';
 import { newManualRecord } from '../../shared/model.ts';
 import { withRun } from '../../shared/runs.ts';
 import { fixture } from '../helpers/observationFixture.ts';
+import { openSec, reveal, stepAware } from "../helpers/stepAware.ts";
 test('v0.6 수동 비교·기간·그룹 중복·저장 재열기·모바일',async()=>{
  const app=createApp(loadConfig({DB_PATH:':memory:',WEB_ROOT:'dist/web'} as any),{logger:()=>{}});
  await new Promise<void>(r=>app.server.listen(5283,'127.0.0.1',r));
  const browser=await chromium.launch({ executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
  try {
- const page=await browser.newPage();const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
+ const page=stepAware(await browser.newPage());const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
  await page.route('**/*',route=>new URL(route.request().url()).hostname==='localhost'?route.continue():route.abort());
  await page.goto('http://localhost:5283/app');
  const rec=withRun(newManualRecord('lc_v06',fixture()),'manual');

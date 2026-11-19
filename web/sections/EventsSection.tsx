@@ -16,7 +16,7 @@ import { Check } from "../components.tsx";
 const DIR: [LocationEvent["direction"], string][] = [["favorable", "유리"], ["adverse", "불리"], ["mixed", "혼재"], ["unknown", "미확인"]];
 const TEXT_TYPES = [".txt", ".md", ".csv", ".json"];
 
-export function EventsSection({ rec, update, session }: SectionProps) {
+export function EventsSection({ rec, update, session, defaultOpen }: SectionProps) {
   const w = rec.working;
   const r = rec.runs[rec.runs.length - 1].result;
   const nonSupply = w.events.filter((e) => e.category !== "supply");
@@ -65,7 +65,7 @@ export function EventsSection({ rec, update, session }: SectionProps) {
   ];
 
   return (
-    <Section id="sec-events" title="입지 사건·근거 상세" summary={`사건 ${w.events.length}건 · 근거 ${w.evidence.length}건 · 첨부 ${w.attachments.length}건`}>
+    <Section id="sec-events" defaultOpen={defaultOpen} title="입지 사건·근거 상세" summary={`사건 ${w.events.length}건 · 근거 ${w.evidence.length}건 · 첨부 ${w.attachments.length}건`}>
       <div className="banner muted small" data-testid="no-auto-collect">입지 뉴스·고시 <b>자동 수집 기능은 없습니다.</b> 아래 사건·일정·근거는 모두 사용자가 입력한 것이며 ‘사용자 입력’으로 표시됩니다. 분석 기준일 이후 처음 알려진 사건·근거와 기준일 이전에 취소가 알려진 공급은 결과에서 제외됩니다.</div>
       {r.excludedEvents.length > 0 && <p className="small warn-text">기준일 이후 처음 알려진 사건(분석 제외): {r.excludedEvents.map((e) => `${e.name}(${e.firstKnown})`).join(", ")}</p>}
       <div className="toolbar">

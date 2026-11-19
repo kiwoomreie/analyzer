@@ -2,9 +2,9 @@ import { createRoot } from "react-dom/client";
 import { useEffect, useState } from "react";
 import { getSession, getSessionError, login, logout, lookupPublicData, type SessionInfo } from "./api.ts";
 import { draftStore, localStore, memoryDrafts } from "./store.ts";
-import { AnalysisView } from "./AnalysisView.tsx";
+import { AnalysisView, reduceMotion } from "./AnalysisView.tsx";
 import { currentPath, navigate, PREVIEW, withRun } from "./nav.ts";
-import { BrandMark, DateText, DownloadFallback, Num, Rail, Select, Text, download } from "./components.tsx";
+import { DateText, DownloadFallback, Num, Select, Text, download } from "./components.tsx";
 import { LABELS, type MoneyUnit } from "../shared/contract.ts";
 import { APP_NAME, emptyWorking, newKey, newManualRecord, ORIGIN_LABEL, type AnalysisRecord, type ReviewPrice } from "../shared/model.ts";
 import { detectFile, makeBackup } from "../shared/importers.ts";
@@ -28,13 +28,13 @@ function App() {
     <div className="app">
       <header className="top">
         <a className="brand" href={PREVIEW ? "#/app" : "/app"} onClick={(e: any) => { e.preventDefault(); navigate("/app"); }} aria-label={APP_NAME}>
-          <BrandMark />
-          <span className="brand-text"><span className="brand-word">ARCHIVE</span><span className="brand-sub">LOCATION · PRICE ANALYZER</span></span>
+          <span className="brand-sq" aria-hidden="true">A</span>
+          <span className="brand-name">{APP_NAME}</span>
         </a>
-        <span className="top-mid"><span className="app-name">{APP_NAME}</span>{PREVIEW && <span className="badge tone-warn" data-testid="preview-badge" title="서버 없이 이 브라우저에서만 실행 — 저장도 이 브라우저에만 됨">서버 없는 웹 버전</span>}</span>
         <span className="top-right">
+          {PREVIEW && <span className="pill-dark" data-testid="preview-badge" title="서버 없이 이 브라우저에서만 실행 — 저장도 이 브라우저에만 됨">서버 없는 웹 버전</span>}
           {sess?.config.auth?.required && <HostedAuth session={sess} onChange={setSess} />}
-          <button className="ghost-btn" onClick={() => navigate("/app")} data-testid="go-home">새 분석·저장 목록</button>
+          <button className="ghost-dark" onClick={() => navigate("/app")} data-testid="go-home">새 분석·저장 목록</button>
         </span>
       </header>
       {m ? <AnalysisView key={path} storage={m[1] === "a" ? "server-temporary" : m[1] === "l" ? "browser-local" : "draft"} recKey={m[2]} session={sess} /> : <Home session={sess} />}
@@ -78,6 +78,9 @@ function Home({ session }: { session: SessionInfo | null }) {
   /** 탭 저장소가 막혀도 분석은 열되, 메모리에만 있다는 사실을 화면에 표시 */
   const openDraft = (rec: AnalysisRecord) => {
     if (draftStore.put(rec)) memoryDrafts.set(rec.key, rec);
+    // 주소 입력 카드가 위로 올라가며 줄어든 뒤 상단 분석 대상 요약으로 이어짐(동작 줄이기 설정이면 바로 이동)
+    const card = document.querySelector(".start-card");
+    if (card && !reduceMotion()) { card.classList.add("launching"); setTimeout(() => navigate(`/app/d/${rec.key}`), 260); return; }
     navigate(`/app/d/${rec.key}`);
   };
 
@@ -107,10 +110,7 @@ function Home({ session }: { session: SessionInfo | null }) {
   const loadDemo = () => openDraft(withRun(newManualRecord(newKey("dr"), demoWorking(), "demo"), "auto-create"));
 
   return (
-    <div className="workspace">
-    <Rail eyebrow="PRECISION. PERSPECTIVE. CONFIDENCE." title={<>입지와 가격,<br />근거로 확인합니다.</>}
-      lead={<>주소 하나로 시작해<br />입지 변화 · 실거래 비교 · 확인할 사항을<br />한 화면에 정리합니다.</>}
-      foot={<>협의체와 별도 앱입니다.<br />결과를 협의체로 보내지 않습니다.</>} />
+    <div className="home-wrap">
     <main className="home">
       {!session && getSessionError() && <div className="banner warn">{getSessionError()}</div>}
       {health.state === "unreadable" && (
@@ -129,13 +129,17 @@ function Home({ session }: { session: SessionInfo | null }) {
         </div>
       )}
       {msg && <div className={`banner ${msg.tone}`} data-testid="home-message">{msg.text}{msg.list?.length ? <ul>{msg.list.map((l, i) => <li key={i}><code>{l}</code></li>)}</ul> : null}</div>}
-      <section className="card start">
-        <p className="step-eyebrow">STEP 01</p>
-        <h2 className="display">주소로 새 분석을 시작합니다.</h2>
+      <header className="step-head home-head">
+        <p className="eyebrow-plum">00 / START</p>
+        <h2 className="step-title">주소 하나로 분석을 시작합니다</h2>
+        <p className="step-sub">입지 변화 · 현재 가격 비교 · 입지 사건 전후 관측 · 주요 불확실성을 한 흐름으로 정리합니다. 협의체와 별도 앱이며 결과를 협의체로 보내지 않습니다.</p>
+      </header>
+      <section className="card start start-card">
+        <h3 className="card-title">분석 대상 주소</h3>
         <p className="muted small">아파트 또는 사업지 주소만으로 시작할 수 있습니다. 전용면적과 검토가격은 가격 비교가 필요할 때 추가하십시오(없으면 가격 판단만 보류).</p>
         <div className="addr-row">
           <input className="addr" placeholder="예: 서울특별시 ○○구 ○○로 123" value={f.address ?? ""} onChange={(e: any) => setF({ ...f, address: e.target.value })} onKeyDown={(e: any) => e.key === "Enter" && start()} data-testid="new-address" />
-          <button className="primary" onClick={start} disabled={busy} data-testid="start">{busy ? "조회 중…" : "분석 시작"}</button>
+          <button className="start-btn" onClick={start} disabled={busy} data-testid="start">{busy ? "조회 중…" : "분석 시작 →"}</button>
         </div>
         <p className="small muted">{autoLookup ? "주소로 좌표·인근 실거래를 자동 조회합니다(새 앱 서버의 고정 공공 API만 사용)." : "자동 조회 미설정(공공데이터·지도 키 없음) — 시작 후 실거래 CSV·입지 사건을 직접 추가하거나 가상 데모로 사용 흐름을 확인하십시오."}</p>
         <button className="link" onClick={() => setMore(!more)} data-testid="more-toggle">{more ? "선택 입력 닫기" : "선택 입력(전용면적·검토가격·일정) 열기"}</button>
@@ -155,8 +159,12 @@ function Home({ session }: { session: SessionInfo | null }) {
         )}
       </section>
 
+      <div className="entry-row">
+        <div className="entry"><b>CSV·직접 입력</b><span>분석 시작 후 ‘01 대상·자료’에서 실거래 CSV 가져오기·직접 입력</span></div>
+        <button className="entry entry-btn" onClick={loadDemo} data-testid="load-demo-top"><b>가상 데모</b><span>[가상] 자료로 전체 흐름 보기</span></button>
+        <label className="entry entry-btn"><b>백업 복구</b><span>JSON 백업 파일 열기</span><input type="file" accept=".json" onChange={(e: any) => { const x = e.target.files?.[0]; if (x) onFile(x); e.target.value = ""; }} /></label>
+      </div>
       <section className="card">
-        <p className="step-eyebrow">SAVED</p>
         <h2>저장한 분석 <span className="muted small">이 브라우저에 저장</span></h2>
         <p className="small muted">브라우저 데이터를 지우거나 다른 기기에서는 자동 복구되지 않습니다. 필요하면 JSON 백업을 내려받으십시오.</p>
         {!localStore.available() && <div className="banner bad" data-testid="storage-blocked">이 브라우저 저장소를 사용할 수 없습니다(차단·개인정보 보호 모드 등). ‘이 브라우저에 저장’이 동작하지 않으니 분석 화면의 ‘JSON 내보내기’로 파일을 보관하고, 다시 볼 때 ‘백업 복구’ 대신 파일을 보관해 두십시오.</div>}

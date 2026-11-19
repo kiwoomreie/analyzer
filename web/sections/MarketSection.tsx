@@ -1,5 +1,4 @@
 import { useRef, useState } from "react";
-import { ObservationPanel } from "./ObservationPanel.tsx";
 import { Badge, ModeBadge, MonthlyBars, Num, Section, Select, Text, download } from "../components.tsx";
 import { demoWorking } from "../../shared/demo.ts";
 
@@ -40,7 +39,7 @@ function StatCells({ s }: { s: Stats }) {
   return s.count ? <><td>{fmtMan(s.medianPerM2)}</td><td>{fmtMan(s.p25PerM2)} ~ {fmtMan(s.p75PerM2)}</td></> : <td colSpan={2} className="muted">유효 표본 없음</td>;
 }
 
-export function MarketSection({ rec, getRec, update, setRec, session }: SectionProps) {
+export function MarketSection({ rec, getRec, update, setRec, session, part }: SectionProps) {
   const w = rec.working;
   const { input, result: r, stale } = latestRun(rec);
   const m = r!.market;
@@ -141,48 +140,8 @@ export function MarketSection({ rec, getRec, update, setRec, session }: SectionP
   const lastCol = (w.collections ?? [])[0] ? migrateCollection((w.collections ?? [])[0]) : undefined;
   const complexes = [...m.complexes].sort((a, b) => ORDER[a.status] - ORDER[b.status] || (a.distanceM ?? 1e9) - (b.distanceM ?? 1e9));
 
-  return (
-    <Section id="sec-market" title="실거래·비교단지 상세" summary={`거래 ${w.transactions.length}건 · 결과 기준 단지 ${m.complexes.length}곳(대표 ${m.comparables.length}, 확인 필요 ${m.needsCheck.length})`}>
-      <div className="toolbar">
-        <label className="filebtn">실거래 CSV 가져오기<input type="file" accept=".csv" data-testid="csv-import" onChange={(e: any) => { const f = e.target.files?.[0]; if (f) importCsv(f); e.target.value = ""; }} /></label>
-        <button onClick={lookup} disabled={!configured || busy} data-testid="public-lookup">{busy ? "조회 중…" : "주소로 좌표·실거래 자동 조회"}</button>
-        {!keysSet && <Badge tone="muted">공공데이터·지도 키 미설정 — 자동 조회 불가(CSV·직접 입력 사용)</Badge>}
-        {keysSet && needLogin && <Badge tone="warn">자동 조회는 화면 위쪽에서 접속 비밀번호로 로그인한 뒤 사용</Badge>}
-        <button onClick={addSample} data-testid="add-sample">가상 예시 거래 넣기</button>
-        <button onClick={() => download(`demo-nearby-trades.csv`, demoCsv(), "text/csv;charset=utf-8")}>가상 예시 CSV 내려받기</button>
-      </div>
-      {msg && <div className="banner info small" data-testid="market-msg">{msg}</div>}
-      {held && (
-        <div className="banner warn small" data-testid="lookup-held">
-          조회 이후 {held.changed.join("·")}이(가) 바뀌어 이전 조건의 결과(거래 {held.res.trades.length}건) 적용을 보류했습니다. 현재 입력과 조건이 다른 결과입니다.
-          <div className="toolbar"><button onClick={() => { applyRes(held.res); setHeld(null); }} data-testid="lookup-apply-anyway">그래도 적용(현재 입력 유지, 거래만 병합)</button><button onClick={() => { setHeld(null); setMsg("보류한 조회 결과를 버렸습니다."); }} data-testid="lookup-discard">버리기</button></div>
-        </div>
-      )}
-      {(diag.identicalGroups.length > 0 || diag.conflictGroups.length > 0) && (
-        <div className="banner warn small" data-testid="trade-diagnosis">
-          <b>거래 진단</b>: 같은 출처·ID·같은 내용 사본 묶음 {diag.identicalGroups.length}개(정리 가능 {cleanable}건) · 같은 ID에 다른 내용 {diag.conflictGroups.length}개(확인 필요, 자동 정리 안 함). 통계에서 사본은 1건으로, 충돌 묶음은 제외하고 계산합니다.
-          {cleanable > 0 && <div className="toolbar"><button onClick={cleanup} data-testid="cleanup-duplicates">같은 내용 사본 정리(정리 전 버전 자동 보관)</button></div>}
-        </div>
-      )}
-      <p className="muted small">같은 자료를 여러 번·다른 순서로 가져와도 같은 거래는 한 번만 집계합니다(식별: 원천 거래 식별자 → 없으면 단지·면적·층·동·계약일·금액이 같은 ‘동조건 묶음’ 단위로 건수·해제 건수만 대사, 입력 순서는 쓰지 않음). 금액만 다른 같은 조건 거래는 자동 정정하지 않고 둘 다 보존해 ‘별도 거래/정정 확인 필요’로 표시합니다. CSV 필수 열: 단지명, 전용면적, 거래금액(만원) 또는 거래금액(원), 계약일 또는 계약년월. 선택 열: 단지코드, 시군구코드, 법정동, 지번, 동, 층, 해제여부, 해제사유발생일, 건축년도, 거래ID, ID출처(거래ID를 발급한 기관·시스템 — 없으면 ‘출처 미지정’으로 보아 ID 값 변경을 자동 반영하지 않음).</p>
-
-      {lastCol && (
-        <details className="sub-details" data-testid="collection-report" open={lastCol.trades.status !== "complete" || lastCol.regionDiscovery.status !== "sampled" || lastCol.complexGeocode.status !== "complete"}>
-          <summary className="small">최근 공공 API 수집({lastCol.at.slice(0, 16).replace("T", " ")}) — 상태 3가지를 따로 표시</summary>
-          <div className="table-scroll"><table className="tbl small" data-testid="collection-status">
-            <tbody>
-              <tr><th>거래 응답 수집·건수 대사</th><td className={lastCol.trades.status === "complete" ? "" : "warn-text"}>거래 응답 수집·건수 대사: {TRADE_STATUS_LABEL[lastCol.trades.status]}</td><td>월 {lastCol.trades.monthsOk}/{lastCol.trades.monthsTotal}{lastCol.trades.capped ? " · 페이지 상한 도달" : ""} · {lastCol.trades.note}</td><td className="muted">미완료면 일부 거래 누락 → 단지별 표본·중위 단가와 대표 비교단지 선정이 달라질 수 있음</td></tr>
-              <tr><th>주변 행정구역 탐색</th><td className={lastCol.regionDiscovery.status === "sampled" && !lastCol.regionDiscovery.capped ? "" : "warn-text"}>주변 행정구역 탐색: {REGION_STATUS_LABEL[lastCol.regionDiscovery.status]}</td><td>{lastCol.regionDiscovery.note}</td><td className="muted">빠진 시군구가 있으면 반경 안 단지가 누락돼 대표 비교단지가 가장 가까운 단지가 아닐 수 있음</td></tr>
-              <tr><th>단지 좌표 확인</th><td className={lastCol.complexGeocode.status === "complete" ? "" : "warn-text"}>단지 좌표 확인: {GEOCODE_STATUS_LABEL[lastCol.complexGeocode.status]}</td><td>{lastCol.complexGeocode.located}/{lastCol.complexGeocode.total}곳{lastCol.complexGeocode.capped ? " · 상한 도달" : ""}</td><td className="muted">좌표 미확인 단지는 확인 필요 후보로 분리되어 대표 비교단지 선정에서 빠짐</td></tr>
-            </tbody>
-          </table></div>
-          <p className="small muted">{collectionStatusText(lastCol)}</p>
-          <div className="table-scroll"><table className="tbl small"><thead><tr><th>시군구</th><th>계약월</th><th>전체 건수</th><th>수집</th><th>페이지</th><th>대사</th></tr></thead>
-            <tbody>{lastCol.months.map((x, i) => <tr key={i}><td>{x.lawdCode}</td><td>{x.yearMonth}</td><td>{x.totalCount ?? "확인 불가"}</td><td>{x.collected}</td><td>{x.pagesFetched}/{x.pagesExpected ?? "?"}</td><td>{x.ok ? "일치" : <span className="warn-text">{x.error ?? "미완료"}</span>}</td></tr>)}</tbody></table></div>
-          {lastCol.notes.length > 0 && <ul className="small">{lastCol.notes.map((n, i) => <li key={i}>{n}</li>)}</ul>}
-        </details>
-      )}
-
+  if (part === "results") return (
+    <Section id="sec-results" title="실거래·비교단지 선정 상세" summary={`결과 기준 단지 ${m.complexes.length}곳(대표 ${m.comparables.length}, 확인 필요 ${m.needsCheck.length}) · 실행본 기준`}>
       <h4>단지별 선정 결과 {stale && <Badge tone="bad">이전 결과</Badge>} <span className="muted small">최근 {m.recentWindow.months}개월({m.recentWindow.start}~{m.recentWindow.end}) · {m.areaFilter ? `전용 ${fmtNum(m.areaFilter.minM2, 1)}~${fmtNum(m.areaFilter.maxM2, 1)}㎡` : "면적 필터 없음"} · 반경 {input.options.radiusM.toLocaleString("ko-KR")}m(거리 확인된 단지만) · 준공연도 ±{input.options.buildYearBand}년 · 단지별 {input.options.minComplexTrades}건 이상</span></h4>
       <div className="table-scroll">
         <table className="tbl small" data-testid="complex-table">
@@ -224,7 +183,50 @@ export function MarketSection({ rec, getRec, update, setRec, session }: SectionP
       <p className="small">{r!.observed.text}</p>
       {r!.events.filter((e) => e.prepricing).map((e) => <p key={e.key} className="small" data-testid="prepricing-note"><b>{e.name} 선반영</b>: {e.prepricing!.text}</p>)}
 
-      <ObservationPanel rec={rec} update={update} />
+    </Section>
+  );
+  return (
+    <Section id="sec-market" defaultOpen title="실거래 자료" summary={`거래 ${w.transactions.length}건 · 결과 기준 단지 ${m.complexes.length}곳(대표 ${m.comparables.length}, 확인 필요 ${m.needsCheck.length})`}>
+      <div className="toolbar">
+        <label className="filebtn">실거래 CSV 가져오기<input type="file" accept=".csv" data-testid="csv-import" onChange={(e: any) => { const f = e.target.files?.[0]; if (f) importCsv(f); e.target.value = ""; }} /></label>
+        <button onClick={lookup} disabled={!configured || busy} data-testid="public-lookup">{busy ? "조회 중…" : "주소로 좌표·실거래 자동 조회"}</button>
+        {!keysSet && <Badge tone="muted">공공데이터·지도 키 미설정 — 자동 조회 불가(CSV·직접 입력 사용)</Badge>}
+        {keysSet && needLogin && <Badge tone="warn">자동 조회는 화면 위쪽에서 접속 비밀번호로 로그인한 뒤 사용</Badge>}
+        <button onClick={addSample} data-testid="add-sample">가상 예시 거래 넣기</button>
+        <button onClick={() => download(`demo-nearby-trades.csv`, demoCsv(), "text/csv;charset=utf-8")}>가상 예시 CSV 내려받기</button>
+      </div>
+      {msg && <div className="banner info small" data-testid="market-msg">{msg}</div>}
+      {held && (
+        <div className="banner warn small" data-testid="lookup-held">
+          조회 이후 {held.changed.join("·")}이(가) 바뀌어 이전 조건의 결과(거래 {held.res.trades.length}건) 적용을 보류했습니다. 현재 입력과 조건이 다른 결과입니다.
+          <div className="toolbar"><button onClick={() => { applyRes(held.res); setHeld(null); }} data-testid="lookup-apply-anyway">그래도 적용(현재 입력 유지, 거래만 병합)</button><button onClick={() => { setHeld(null); setMsg("보류한 조회 결과를 버렸습니다."); }} data-testid="lookup-discard">버리기</button></div>
+        </div>
+      )}
+      {(diag.identicalGroups.length > 0 || diag.conflictGroups.length > 0) && (
+        <div className="banner warn small" data-testid="trade-diagnosis">
+          <b>거래 진단</b>: 같은 출처·ID·같은 내용 사본 묶음 {diag.identicalGroups.length}개(정리 가능 {cleanable}건) · 같은 ID에 다른 내용 {diag.conflictGroups.length}개(확인 필요, 자동 정리 안 함). 통계에서 사본은 1건으로, 충돌 묶음은 제외하고 계산합니다.
+          {cleanable > 0 && <div className="toolbar"><button onClick={cleanup} data-testid="cleanup-duplicates">같은 내용 사본 정리(정리 전 버전 자동 보관)</button></div>}
+        </div>
+      )}
+      <p className="muted small">같은 자료를 여러 번·다른 순서로 가져와도 같은 거래는 한 번만 집계합니다(식별: 원천 거래 식별자 → 없으면 단지·면적·층·동·계약일·금액이 같은 ‘동조건 묶음’ 단위로 건수·해제 건수만 대사, 입력 순서는 쓰지 않음). 금액만 다른 같은 조건 거래는 자동 정정하지 않고 둘 다 보존해 ‘별도 거래/정정 확인 필요’로 표시합니다. CSV 필수 열: 단지명, 전용면적, 거래금액(만원) 또는 거래금액(원), 계약일 또는 계약년월. 선택 열: 단지코드, 시군구코드, 법정동, 지번, 동, 층, 해제여부, 해제사유발생일, 건축년도, 거래ID, ID출처(거래ID를 발급한 기관·시스템 — 없으면 ‘출처 미지정’으로 보아 ID 값 변경을 자동 반영하지 않음).</p>
+
+      {lastCol && (
+        <details className="sub-details" data-testid="collection-report" open={lastCol.trades.status !== "complete" || lastCol.regionDiscovery.status !== "sampled" || lastCol.complexGeocode.status !== "complete"}>
+          <summary className="small">최근 공공 API 수집({lastCol.at.slice(0, 16).replace("T", " ")}) — 상태 3가지를 따로 표시</summary>
+          <div className="table-scroll"><table className="tbl small" data-testid="collection-status">
+            <tbody>
+              <tr><th>거래 응답 수집·건수 대사</th><td className={lastCol.trades.status === "complete" ? "" : "warn-text"}>거래 응답 수집·건수 대사: {TRADE_STATUS_LABEL[lastCol.trades.status]}</td><td>월 {lastCol.trades.monthsOk}/{lastCol.trades.monthsTotal}{lastCol.trades.capped ? " · 페이지 상한 도달" : ""} · {lastCol.trades.note}</td><td className="muted">미완료면 일부 거래 누락 → 단지별 표본·중위 단가와 대표 비교단지 선정이 달라질 수 있음</td></tr>
+              <tr><th>주변 행정구역 탐색</th><td className={lastCol.regionDiscovery.status === "sampled" && !lastCol.regionDiscovery.capped ? "" : "warn-text"}>주변 행정구역 탐색: {REGION_STATUS_LABEL[lastCol.regionDiscovery.status]}</td><td>{lastCol.regionDiscovery.note}</td><td className="muted">빠진 시군구가 있으면 반경 안 단지가 누락돼 대표 비교단지가 가장 가까운 단지가 아닐 수 있음</td></tr>
+              <tr><th>단지 좌표 확인</th><td className={lastCol.complexGeocode.status === "complete" ? "" : "warn-text"}>단지 좌표 확인: {GEOCODE_STATUS_LABEL[lastCol.complexGeocode.status]}</td><td>{lastCol.complexGeocode.located}/{lastCol.complexGeocode.total}곳{lastCol.complexGeocode.capped ? " · 상한 도달" : ""}</td><td className="muted">좌표 미확인 단지는 확인 필요 후보로 분리되어 대표 비교단지 선정에서 빠짐</td></tr>
+            </tbody>
+          </table></div>
+          <p className="small muted">{collectionStatusText(lastCol)}</p>
+          <div className="table-scroll"><table className="tbl small"><thead><tr><th>시군구</th><th>계약월</th><th>전체 건수</th><th>수집</th><th>페이지</th><th>대사</th></tr></thead>
+            <tbody>{lastCol.months.map((x, i) => <tr key={i}><td>{x.lawdCode}</td><td>{x.yearMonth}</td><td>{x.totalCount ?? "확인 불가"}</td><td>{x.collected}</td><td>{x.pagesFetched}/{x.pagesExpected ?? "?"}</td><td>{x.ok ? "일치" : <span className="warn-text">{x.error ?? "미완료"}</span>}</td></tr>)}</tbody></table></div>
+          {lastCol.notes.length > 0 && <ul className="small">{lastCol.notes.map((n, i) => <li key={i}>{n}</li>)}</ul>}
+        </details>
+      )}
+
 
       <h4>거래 내역(현재 입력) <span className="muted small">출처: {[...new Set(w.transactions.map((t) => t.source ?? "미기재"))].slice(0, 4).join(", ") || "없음"}</span></h4>
       <div className="toolbar small">

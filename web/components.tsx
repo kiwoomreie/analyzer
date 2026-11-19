@@ -74,9 +74,9 @@ export function Badge({ tone, children }: { tone: "info" | "warn" | "bad" | "ok"
 }
 
 /** 펼쳐 보는 상세 영역. 펼침 상태는 탭 세션 동안 유지(입력 중 사라지지 않게). */
-export function Section(p: { id: string; title: string; summary?: string; children: any }) {
+export function Section(p: { id: string; title: string; summary?: string; children: any; defaultOpen?: boolean }) {
   const sk = `la.open.${p.id}`;
-  const [open, setOpen] = useState<boolean>(() => { try { return sessionStorage.getItem(sk) === "1" || location.hash === `#${p.id}`; } catch { return false; } });
+  const [open, setOpen] = useState<boolean>(() => { try { const v = sessionStorage.getItem(sk); return v === "1" || (v === null && !!p.defaultOpen) || location.hash === `#${p.id}`; } catch { return !!p.defaultOpen; } });
   return (
     <details className="section" id={p.id} open={open} onToggle={(e: any) => { const o = e.target.open; setOpen(o); try { sessionStorage.setItem(sk, o ? "1" : "0"); } catch { /* 무시 */ } }}>
       <summary><span className="sec-title">{p.title}</span>{p.summary && <span className="sec-sum muted">{p.summary}</span>}</summary>

@@ -8,6 +8,7 @@ import { chromium, type Browser, type Page } from "playwright";
 import { createApp, type App } from "../../server/app.ts";
 import { loadConfig } from "../../server/config.ts";
 import { mockState, mockTransport } from "../helpers/mockPublicApi.ts";
+import { openSec, reveal, stepAware } from "../helpers/stepAware.ts";
 
 const PORT = 5277, BASE = `http://localhost:${PORT}`;
 let app: App, browser: Browser;
@@ -19,7 +20,7 @@ before(async () => {
 });
 after(async () => { mockState.delayMs = 0; await browser.close(); await app.close(); });
 
-const open = async (page: Page, id: string) => { if ((await page.locator(`#${id}`).getAttribute("open")) === null) await page.click(`#${id} > summary`); await page.waitForTimeout(150); };
+const open = openSec;
 
 async function start(page: Page) {
   await page.goto(`${BASE}/app`);
@@ -31,7 +32,7 @@ async function start(page: Page) {
 }
 
 test("[3-재현] 조회 응답을 기다리는 동안 바꾼 검토가격·제외 사유를 오래된 사본으로 덮어쓰지 않음", async () => {
-  const page = await (await browser.newContext()).newPage();
+  const page = stepAware(await (await browser.newContext()).newPage());
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await start(page);
@@ -51,7 +52,7 @@ test("[3-재현] 조회 응답을 기다리는 동안 바꾼 검토가격·제�
 });
 
 test("[3] 조회 중 주소를 바꾸면 이전 주소의 응답은 적용 보류(충돌 안내), 연속 조회도 중복 없이 동작", async () => {
-  const page = await (await browser.newContext()).newPage();
+  const page = stepAware(await (await browser.newContext()).newPage());
   await start(page);
   const count0 = await page.locator("[data-testid=tx-table] tbody tr").count();
   mockState.delayMs = 120;
@@ -74,7 +75,7 @@ test("[3] 조회 중 주소를 바꾸면 이전 주소의 응답은 적용 보�
 test("[1] 저장 원문 손상: 첫 화면 경고·원문 내보내기, 새 저장은 차단되고 원문 유지(브라우저)", async () => {
   const ctx = await browser.newContext({ acceptDownloads: true });
   await ctx.addInitScript(() => { if (!sessionStorage.getItem("__seeded")) { localStorage.setItem("location-analyzer.saved.v1", '{"lc_a": BROKEN'); sessionStorage.setItem("__seeded", "1"); } });
-  const page = await ctx.newPage();
+  const page = stepAware(await ctx.newPage());
   await page.goto(`${BASE}/app`);
   await page.waitForSelector("[data-testid=store-unreadable]");
   const [dl] = await Promise.all([page.waitForEvent("download"), page.click("[data-testid=export-raw]")]);
@@ -90,7 +91,7 @@ test("[1] 저장 원문 손상: 첫 화면 경고·원문 내보내기, 새 저�
 
 test("[1] 일부 기록 손상: 정상 기록은 열리고 저장 후에도 손상 기록 원문 유지(브라우저)", async () => {
   const ctx = await browser.newContext();
-  const page = await ctx.newPage();
+  const page = stepAware(await ctx.newPage());
   await page.goto(`${BASE}/app`);
   await page.click("[data-testid=load-demo]");
   await page.waitForSelector("[data-testid=summary]");
@@ -113,7 +114,7 @@ test("API 키 없을 때 제한 기능을 화면에 표시, 가상 예시로 입
   const keyless = createApp(loadConfig({ DB_PATH: join(mkdtempSync(join(tmpdir(), "la-kl-")), "k.db"), WEB_ROOT: "dist/web" } as any), { logger: () => {} });
   await new Promise<void>((r) => keyless.server.listen(5278, "127.0.0.1", r));
   const ctx = await browser.newContext({ acceptDownloads: true });
-  const page = await ctx.newPage();
+  const page = stepAware(await ctx.newPage());
   await page.goto("http://localhost:5278/app");
   const lim = await page.textContent("[data-testid=key-limits]") ?? "";
   assert.match(lim, /주소 → 좌표 자동 변환.*사용 불가/);
