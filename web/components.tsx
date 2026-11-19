@@ -233,3 +233,47 @@ export function DownloadFallback() {
     </div>
   );
 }
+
+/** ARCHIVE 계열 로고(마름모 안 집 모양) */
+export function BrandMark() {
+  return (
+    <svg className="brand-mark" viewBox="0 0 40 40" aria-hidden="true">
+      <rect x="8" y="8" width="24" height="24" transform="rotate(45 20 20)" fill="none" stroke="currentColor" strokeWidth="1.2" />
+      <path d="M14.5 26.5v-7l5.5-4.5 5.5 4.5v7z" fill="none" stroke="currentColor" strokeWidth="1.1" />
+      <path d="M18.2 26.5v-4h3.6v4" fill="none" stroke="currentColor" strokeWidth="1.1" />
+    </svg>
+  );
+}
+
+export interface RailStep { id: string; label: string; done?: boolean }
+/** 왼쪽 안내 영역: 표어·제목·단계 목록. 단계를 누르면 해당 상세 영역을 펼쳐 이동 */
+export function Rail({ eyebrow, title, lead, steps, current, onStep, foot }: { eyebrow: string; title: any; lead?: any; steps?: RailStep[]; current?: string; onStep?: (id: string) => void; foot?: any }) {
+  return (
+    <aside className="rail" data-testid="rail">
+      <p className="eyebrow">{eyebrow}</p>
+      <h1 className="rail-title">{title}</h1>
+      {lead && <p className="rail-lead">{lead}</p>}
+      {steps && (
+        <ol className="steps">
+          {steps.map((s, i) => (
+            <li key={s.id} className={`${s.id === current ? "cur" : ""} ${s.done ? "done" : ""}`}>
+              <button className="step-btn" onClick={() => onStep?.(s.id)} data-testid={`step-${s.id}`}>
+                <span className="step-no">{s.done && s.id !== current ? "√" : i + 1}</span>
+                <span className="step-label">{s.label}</span>
+              </button>
+            </li>
+          ))}
+        </ol>
+      )}
+      {foot && <div className="rail-foot">{foot}</div>}
+    </aside>
+  );
+}
+
+/** 상세 영역(details)을 펼치고 그 위치로 이동 */
+export function openSection(id: string) {
+  const el = document.getElementById(id) as HTMLDetailsElement | null;
+  if (!el) return;
+  if (!el.open) el.open = true;
+  requestAnimationFrame(() => el.scrollIntoView({ behavior: "smooth", block: "start" }));
+}

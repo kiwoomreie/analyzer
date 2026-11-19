@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { deleteTemp, getTemp, putTemp, type SessionInfo } from "./api.ts";
 import { draftStore, localStore, memoryDrafts } from "./store.ts";
 import { latestRun, navigate, withRun } from "./nav.ts";
-import { Badge, download } from "./components.tsx";
+import { Badge, download, openSection, Rail } from "./components.tsx";
 import { DATA_MODE_LABEL, migrateRecord, newKey, ORIGIN_LABEL, titleFor, type AnalysisRecord, type WorkingInputs } from "../shared/model.ts";
 import { makeBackup, scanWorking } from "../shared/importers.ts";
 import { seoulNowIso, seoulToday } from "../shared/dates.ts";
@@ -35,6 +35,7 @@ export function AnalysisView({ storage, recKey, session }: { storage: StorageKin
   const [saveState, setSaveState] = useState<string>("");
   const [saveError, setSaveError] = useState<string | null>(null);
   const [memoryOnly, setMemoryOnly] = useState(false);
+  const [railCur, setRailCur] = useState<string | undefined>();
   const timer = useRef<any>(null);
   /** 항상 최신 기록을 가리킴(비동기 응답이 오래된 화면 상태로 덮어쓰지 않도록) */
   const recRef = useRef<AnalysisRecord | null>(null);
@@ -129,16 +130,36 @@ export function AnalysisView({ storage, recKey, session }: { storage: StorageKin
   };
   const props: SectionProps = { rec, getRec: () => recRef.current, update, setRec, session };
 
+  const w0 = rec.working;
+  const steps = [
+    { id: "sec-input", label: "입력·세부 설정", done: !!w0.property.exclusiveAreaM2 },
+    { id: "sec-events", label: "입지 사건·근거", done: w0.events.length > 0 },
+    { id: "sec-market", label: "실거래·비교단지", done: w0.transactions.length > 0 },
+    { id: "sec-report", label: "보고서", done: rec.runs.length > 0 && !stale },
+  ];
   return (
+    <div className="workspace">
+    <Rail eyebrow="PRECISION. PERSPECTIVE. CONFIDENCE." title={<>근거를 놓고,<br />차분히 봅니다.</>}
+      lead={<>요약 세 가지를 먼저 보고<br />필요한 단계만 펼쳐 확인합니다.</>}
+      steps={steps} current={railCur} onStep={(id) => { setRailCur(id); openSection(id); }}
+      foot={<>관찰된 변화는 인과효과가 아닙니다.<br />적정가격·예상 상승률을 산정하지 않습니다.</>} />
     <main className="view">
+      <div className="hero" data-testid="hero">
+        <div className="hero-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 20V6l7-3v17M11 20V9l9 3v8M4 20h17M7 9h1M7 12h1M7 15h1M14 14h1M17 14h1M14 17h1M17 17h1" fill="none" stroke="currentColor" strokeWidth="1.3" /></svg></div>
+        <div className="hero-main">
+          <div className="hero-eyebrow">검토 중인 분석 · {STORAGE_LABEL[storage]}</div>
+          <h1 data-testid="analysis-title">{rec.title}</h1>
+          <div className="hero-sub">{rec.working.property.displayName ? `${rec.working.property.address} · ` : ""}전용 {rec.working.property.exclusiveAreaM2 ? `${rec.working.property.exclusiveAreaM2}㎡` : "미입력"} · 기준일 {rec.working.asOf}</div>
+        </div>
+        <button className="hero-link" onClick={() => { setRailCur("sec-input"); openSection("sec-input"); }}>입력 수정</button>
+      </div>
       <div className="view-head">
         <div>
-          <h1 data-testid="analysis-title">{rec.title}</h1>
-          <div className="muted small">{rec.working.property.displayName ? rec.working.property.address : ""}</div>
-          <div className="badges">
-            <Badge tone={storage === "browser-local" ? "ok" : "warn"}>{STORAGE_LABEL[storage]}</Badge>
-            <Badge tone="muted">{ORIGIN_LABEL[rec.origin.kind]}</Badge>
+          <div className="chips">
+            <span className="chip">{ORIGIN_LABEL[rec.origin.kind]}</span>
+            <span className="chip">{STORAGE_LABEL[storage]}</span>
             {rec.origin.kind === "demo" && <Badge tone="bad">가상 자료 — 실제 판단에 사용 금지</Badge>}
+            {stale && <span className="chip chip-warn">재분석 필요 · 입력 변경</span>}
           </div>
           <dl className="meta" data-testid="meta">
             <dt>분석 기준일</dt><dd data-testid="meta-asof">{rec.working.asOf}</dd>
@@ -167,13 +188,13 @@ export function AnalysisView({ storage, recKey, session }: { storage: StorageKin
 
       <div className="summary" data-testid="summary">
         <div className="card sblock" data-testid="summary-location">
-          <h2>① 입지 변화 {stale && <Badge tone="bad">이전 결과</Badge>}</h2>
+          <p className="step-eyebrow">01</p><h2>입지 변화 {stale && <Badge tone="bad">이전 결과</Badge>}</h2>
           {!r.summary.location.length ? <p className="muted">입력된 입지 사건 없음 — 아래 ‘입지 사건·근거 상세’에서 추가</p> : (
             <ul>{r.summary.location.map((l) => <li key={l.key}><b>{l.text}</b>{l.detail && <div className="muted small">{l.detail}</div>}</li>)}</ul>
           )}
         </div>
         <div className="card sblock" data-testid="summary-price">
-          <h2>② 가격 영향과 근거 {stale && <Badge tone="bad">이전 결과</Badge>}</h2>
+          <p className="step-eyebrow">02</p><h2>가격 영향과 근거 {stale && <Badge tone="bad">이전 결과</Badge>}</h2>
           <dl className="kv">
             <dt>검토가격 비교</dt><dd data-testid="price-compare">{r.price.status === "held" ? <><Badge tone="muted">보류</Badge> {r.price.text.replace(/^가격 판단 보류 — /, "")}</> : r.price.text}</dd>
             <dt>비교 근거</dt><dd>{r.summary.price.comparables}</dd>
@@ -184,7 +205,7 @@ export function AnalysisView({ storage, recKey, session }: { storage: StorageKin
           <p className="muted small">{r.summary.price.basis}</p>
         </div>
         <div className="card sblock" data-testid="summary-uncertainty">
-          <h2>③ 주요 불확실성 {stale && <Badge tone="bad">이전 결과</Badge>}</h2>
+          <p className="step-eyebrow">03</p><h2>주요 불확실성 {stale && <Badge tone="bad">이전 결과</Badge>}</h2>
           {!r.summary.uncertainties.length ? <p className="muted">자료 범위 내 주요 항목 없음</p> : (
             <ul>{r.summary.uncertainties.map((f, i) => <li key={i}><Badge tone={f.level === "high" ? "bad" : "warn"}>{f.level === "high" ? "높음" : "중간"}</Badge> {f.text}</li>)}</ul>
           )}
@@ -221,5 +242,6 @@ export function AnalysisView({ storage, recKey, session }: { storage: StorageKin
       <MarketSection {...props} />
       <ReportSection {...props} />
     </main>
+    </div>
   );
 }
