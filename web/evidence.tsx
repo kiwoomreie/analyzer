@@ -57,7 +57,25 @@ function CitationBody({ c }: { c: Citation }) {
       <p className="small">{c.categoryLabel} · {c.stageAsOf}{c.dataMode === "demo" ? " · [가상]" : ""}</p>
       <div className="table-scroll"><table className="tbl small"><thead><tr><th>구분</th><th>예정/실제</th><th>적용일</th><th>발표일</th><th>기준일 반영</th></tr></thead>
         <tbody>{c.timeline.map((t, i) => <tr key={i}><td>{t.type}</td><td>{t.status}</td><td>{t.date}</td><td>{t.announcedOn}</td><td>{t.knownAsOf ? "반영" : "제외(기준일 이후 정보)"}</td></tr>)}</tbody></table></div>
-      <p className="small muted">{c.evidenceText}</p>
+      <h4 className="small">근거 문서(실행 시점 기록)</h4>
+      {!c.documents ? <p className="small muted" data-testid="evidence-docs-none">문서 상세 당시 미보존(v0.8.1 이전 실행) — 현재 근거로 채우지 않음</p>
+        : !c.documents.length ? <p className="small muted" data-testid="evidence-docs-none">이 사건에 연결된 근거 문서 없음</p>
+        : <ol className="doc-list" data-testid="evidence-docs">{c.documents.map((d) => (
+          <li key={d.key} data-testid={`evidence-doc-${d.key}`}>
+            <strong>「{d.title || "제목 미기재"}」</strong>{d.afterAsOf ? <span className="sel-pill warn-pill">기준일 이후 문서</span> : null}
+            <dl className="kv small">
+              <dt>문서번호</dt><dd>{d.sourceRef || "미기재"}</dd>
+              <dt>발행기관</dt><dd>{d.publisher || "미기재"}</dd>
+              <dt>발행일</dt><dd>{d.publishedOn ?? "미기재"}{d.effectiveOn ? ` · 자료 기준일 ${d.effectiveOn}` : ""}</dd>
+              <dt>페이지·절</dt><dd>{d.pageOrSection || "미기재"}</dd>
+              <dt>출처 종류</dt><dd>{d.sourceType}</dd>
+              <dt>확인한 사실</dt><dd>{d.fact || "-"}</dd>
+              <dt>기록 수준</dt><dd>{d.level} · {d.status}{d.checkedOn ? ` · 확인일 ${d.checkedOn}` : ""}</dd>
+              {d.milestones.length ? <><dt>근거 일정</dt><dd>{d.milestones.join(", ")}</dd></> : null}
+              {d.sourceUrl ? <><dt>주소</dt><dd className="break">{d.sourceUrl}</dd></> : null}
+            </dl>
+          </li>))}</ol>}
+      <p className="small muted">{c.evidenceText} · 원문 대조는 사용자 기록이며 앱이 자동 검증하지 않음</p>
     </div>
   );
   return (

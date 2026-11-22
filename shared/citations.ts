@@ -1,12 +1,24 @@
 // 실행본 인용 근거: 결과 카드의 [실거래-01]·[입지-01]·[관측-01] 버튼이 가리키는 거래·단지·사건을
 // 그 실행 시점 값으로 별도 보존한다. 이후 입력(거래 수정·삭제, 단지명 변경)으로 다시 채우지 않는다.
 import type { AnalysisResult } from "./analysis.ts";
-import type { DataMode, Transaction, WorkingInputs } from "./model.ts";
+import { EVIDENCE_LEVEL_LABEL, EVIDENCE_SOURCE_LABEL, EVIDENCE_STATUS_LABEL, MILESTONE_LABEL, type DataMode, type Evidence, type Transaction, type WorkingInputs } from "./model.ts";
+import { isBefore, parseDateValue } from "./dates.ts";
+import { evidenceLevel } from "./analysis.ts";
 
 export interface CitedTrade { key: string; contractDate: string; areaM2: number; floor?: number; priceKrw: number; perM2Krw: number; cancelled: boolean; dataMode: DataMode; source?: string }
 export interface CitationBase { id: string; title: string; summary: string; dataMode?: DataMode }
 export interface TradeCitation extends CitationBase { kind: "trade"; complexKey: string; name: string; dong?: string; distanceM: number | null; buildYear: number | null; medianPerM2: number | null; trades: CitedTrade[]; tradeTotal: number }
-export interface EventCitation extends CitationBase { kind: "event"; eventKey: string; name: string; categoryLabel: string; stageAsOf: string; timeline: { type: string; status: string; date: string; announcedOn: string; knownAsOf: boolean; note?: string }[]; evidenceText: string }
+/** 입지 사건 근거 문서(실행 시점 값). 원문 파일·주소는 앱이 조회하지 않으며 텍스트로만 남김 */
+export interface CitedDocument {
+  key: string; title: string; publisher: string; sourceType: string; sourceRef?: string; sourceUrl?: string;
+  publishedOn?: string; effectiveOn?: string; checkedOn?: string; pageOrSection?: string;
+  fact: string; status: string; level: string; originalReviewed: boolean; dataMode: DataMode;
+  /** 이 문서를 근거로 기록한 일정(예: 고시 2024-02-20) */
+  milestones: string[];
+  /** 분석 기준일 이후 발행된 문서(기준일 시점에는 알 수 없던 정보) */
+  afterAsOf: boolean;
+}
+export interface EventCitation extends CitationBase { kind: "event"; eventKey: string; name: string; categoryLabel: string; stageAsOf: string; timeline: { type: string; status: string; date: string; announcedOn: string; knownAsOf: boolean; note?: string }[]; evidenceText: string; documents?: CitedDocument[] }
 export interface ObservationCitation extends CitationBase { kind: "observation"; anchor: string; window: string; usage: { group: string; label: string; used: boolean; pre: number; post: number; reason?: string }[] }
 export type Citation = TradeCitation | EventCitation | ObservationCitation;
 export interface CitationSet { version: 1; savedAt: string; items: Citation[] }
@@ -31,8 +43,22 @@ export function buildCitations(input: WorkingInputs, r: AnalysisResult, at: stri
       summary: `대표 비교단지 ${i + 1} · 최근 유사면적 거래 ${rows.length}건 · ${c.selectionReason}`,
       distanceM: c.distanceM, buildYear: c.buildYear, medianPerM2: c.stats.medianPerM2, trades: trades.slice(0, MAX_TRADES_PER_CITATION), tradeTotal: trades.length, dataMode: c.dataModes?.[0] });
   });
+  const asOf = parseDateValue(input.asOf);
   r.events.forEach((e, i) => {
-    items.push({ kind: "event", id: eventCitationId(i), eventKey: e.key, name: e.name, title: e.name, categoryLabel: e.categoryLabel, stageAsOf: e.stageAsOf,
+    const ev = input.events.find((x) => x.key === e.key);
+    const docKeys = new Set([...(ev?.evidenceKeys ?? []), ...(ev?.milestones ?? []).flatMap((m) => m.evidenceKeys ?? [])]);
+    const docs: Evidence[] = (input.evidence ?? []).filter((d) => docKeys.has(d.key) || (d.linked ?? []).includes(e.key));
+    const documents: CitedDocument[] = docs.map((d) => {
+      const pub = parseDateValue(d.publishedOn ?? null);
+      return {
+        key: d.key, title: d.title, publisher: d.publisher, sourceType: d.sourceType ? EVIDENCE_SOURCE_LABEL[d.sourceType] : "미기재", sourceRef: d.sourceRef, sourceUrl: d.sourceUrl,
+        publishedOn: d.publishedOn, effectiveOn: d.effectiveOn, checkedOn: d.checkedOn, pageOrSection: d.pageOrSection,
+        fact: d.fact, status: EVIDENCE_STATUS_LABEL[d.status], level: EVIDENCE_LEVEL_LABEL[evidenceLevel(d)], originalReviewed: !!d.originalReviewed, dataMode: d.dataMode,
+        milestones: (ev?.milestones ?? []).filter((m) => (m.evidenceKeys ?? []).includes(d.key)).map((m) => `${MILESTONE_LABEL[m.type] ?? m.type} ${m.date ?? "날짜 미기재"}`),
+        afterAsOf: !!(pub && asOf && isBefore(asOf, pub) === true),
+      };
+    });
+    items.push({ kind: "event", id: eventCitationId(i), eventKey: e.key, name: e.name, title: e.name, categoryLabel: e.categoryLabel, stageAsOf: e.stageAsOf, documents,
       summary: `${e.categoryLabel} · ${e.stageAsOf}`, dataMode: e.dataMode, evidenceText: e.evidence.text,
       timeline: e.timeline.map((t) => ({ type: t.type, status: t.status, date: t.date, announcedOn: t.announcedOn, knownAsOf: t.knownAsOf, note: t.note })) });
   });

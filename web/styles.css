@@ -231,3 +231,7 @@ h2{font-size:18px;font-weight:800;letter-spacing:-.02em}
   .view-foot{flex-direction:column}
 }
 @media print{.top,.deal-head,.stepbar,.step-head,.step-nav,.view-foot,.drawer-wrap{display:none!important}.step-panel[hidden]{display:none!important}}
+.run-note{background:var(--warnbg);border:1px solid #f0d39a;border-radius:8px;padding:6px 10px;color:var(--ink,#1d2433)}
+.doc-table td,.doc-table th{font-size:12.5px;vertical-align:top}
+.doc-list{padding-left:18px;margin:6px 0}.doc-list li{margin-bottom:10px}.break{word-break:break-all}
+.warn-pill{background:var(--warnbg);margin-left:6px}

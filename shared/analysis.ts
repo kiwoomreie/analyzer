@@ -111,6 +111,8 @@ export interface AnalysisResult {
   groupObservation?: import("./observation.ts").ObservationResult;
   /** v0.8: 결과 카드 인용 근거의 실행 시점 스냅샷(withRun에서 채움). 이전 실행본에는 없음 → ‘당시 근거 상세 미보존’ */
   citations?: import("./citations.ts").CitationSet;
+  /** v0.8.1: 보고서 재생성용 실행 시점 맥락(제목·주소·검토가격·조건·근거 목록). 이전 실행본에는 없음 → ‘당시 정보 미보존’ */
+  reportContext?: import("./runContext.ts").ReportContext;
   missing: MissingItem[];
   property: { address: string; exclusiveAreaM2: number | null; exclusivePyeong: number | null; buildYear: number | null; coordinatesText: string };
   events: EventResult[];

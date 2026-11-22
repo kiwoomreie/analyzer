@@ -8,7 +8,7 @@ import { ObservationPanel } from "./sections/ObservationPanel.tsx";
 import { ObservationDetail, RunHistory } from "./sections/ResultExtras.tsx";
 import { citationIdForComplex, citationIdForEvent, OBS_CITATION_ID } from "../shared/citations.ts";
 import { LABELS } from "../shared/contract.ts";
-import { currentPriceView, observationView } from "../shared/priceView.ts";
+import { currentPriceView, observationView, priceInputOf } from "../shared/priceView.ts";
 import { DATA_MODE_LABEL, migrateRecord, newKey, ORIGIN_LABEL, titleFor, type AnalysisRecord, type WorkingInputs } from "../shared/model.ts";
 import { makeBackup, scanWorking } from "../shared/importers.ts";
 import { seoulNowIso, seoulToday } from "../shared/dates.ts";
@@ -134,7 +134,7 @@ export function AnalysisView({ storage, recKey, session }: { storage: StorageKin
   if (!rec || !lr?.run || !lr.result) return <main className="home"><p className="muted">불러오는 중…</p></main>;
   const lastRun = lr.run;
   const r = lr.result;
-  const pv = currentPriceView(lr.input, r);
+  const pv = currentPriceView(priceInputOf(lr.input), r);
   const ov = observationView(r.groupObservation);
   const stale = lr.stale;
 

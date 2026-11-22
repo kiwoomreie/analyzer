@@ -6,26 +6,31 @@ import { hashOf, stableStringify } from "./hash.ts";
 import { fmtMan, fmtNum, fmtPct, fmtPp } from "./units.ts";
 import { reportLabelOf, type ObservationResult } from "./observation.ts";
 import { currentPriceView, observationView } from "./priceView.ts";
+import { contextOf, runOf, type ReportContext } from "./runContext.ts";
 
 const esc = (s: string) => s.replace(/\|/g, "\\|").replace(/\r?\n/g, " ");
 const dist = (m: number | null) => (m === null ? "미확인" : `${Math.round(m).toLocaleString("ko-KR")}m`);
 const yd = (d: number | null) => (d === null ? "-" : `${d > 0 ? "+" : ""}${d}년`);
 
-/** 결과를 만든 실행 당시 입력(없으면 현재 작업본) */
-export function inputOf(rec: AnalysisRecord, r: AnalysisResult): WorkingInputs {
-  return runOf(rec, r)?.input ?? rec.working;
-}
+/** 당시 정보가 없을 때 표시(현재 작업본 값으로 채우지 않음) */
+export const NOT_PRESERVED = "당시 정보 미보존";
 
-/** 같은 해시의 재실행은 객체 일치를 우선하고 복구 후에는 최신 일치를 찾는다. */
-function runOf(rec: AnalysisRecord, r: AnalysisResult) {
-  return rec.runs.find(x => x.result === r) ?? [...rec.runs].reverse().find(x => x.inputHash === r.inputHash);
+/** 보고서 대상 표기: 실행 당시 사업지명·주소. 맥락이 없으면 결과에 남은 주소만 쓰고 사업지명은 미보존으로 둔다. */
+function targetOf(ctx: ReportContext | null, r: AnalysisResult): string {
+  if (ctx) return ctx.displayName ? `${ctx.displayName} (${ctx.address})` : ctx.address;
+  return `사업지명 ${NOT_PRESERVED} (${r.property.address || `주소 ${NOT_PRESERVED}`})`;
 }
 
 function header(rec: AnalysisRecord, r: AnalysisResult, title: string): string[] {
-  const w = inputOf(rec, r);
+  const ctx = contextOf(rec, r);
+  const run = runOf(rec, r);
+  const latest = rec.runs.length ? rec.runs[rec.runs.length - 1] : undefined;
+  const runLine = run ? `- 실행 #${run.runNo} 당시 기록 기준(${run.at.slice(0, 16).replace("T", " ")})${latest && run !== latest ? ` · 최신 실행 #${latest.runNo} 아님` : ""}${ctx ? "" : ` · 당시 입력 맥락 미보존(v0.8.1 이전 실행) — 결과에 남은 수치만 표시`}` : "- 실행 기록 없음";
   return [
     `# ${title}`, "",
-    `- 대상: ${esc(w.property.displayName ? `${w.property.displayName} (${w.property.address})` : w.property.address)}`,
+    ...(ctx ? [`- 검토 건: ${esc(ctx.title)}`] : [`- 검토 건: 제목 ${NOT_PRESERVED}`]),
+    `- 대상: ${esc(targetOf(ctx, r))}`,
+    runLine,
     `- 분석 기준일: ${r.asOf} · 금액 단위: 만원(원 단위 계산) · 면적: 전용㎡ · 입력: ${ORIGIN_LABEL[rec.origin.kind]}`,
     `- 작성: ${APP_NAME} 엔진 ${r.engineVersion} · 입력 해시 ${r.inputHash.slice(0, 12)}`, "",
   ];
@@ -46,9 +51,10 @@ export function reportSummary(rec: AnalysisRecord, r: AnalysisResult): string {
   if (!r.summary.location.length) L.push("- 입력된 입지 사건 없음");
   r.summary.location.forEach((l) => L.push(`- ${esc(l.text)}${l.detail ? `  \n  ${esc(l.detail)}` : ""}`));
   L.push("", "## 2. 가격 영향과 근거");
-  const pv = currentPriceView(inputOf(rec, r), r);
+  const ctx = contextOf(rec, r);
+  const pv = currentPriceView(ctx, r);
   L.push("### 2-1. 현재 검토가격 비교",
-    inputOf(rec, r).reviewPrice ? `- 검토가격: 세대당 총액 ${pv.review.household} · ${pv.review.perPyeong} · ${pv.review.perM2} — ${esc(pv.review.label)}, 기준일 ${pv.review.basisDate}${pv.review.note ? ` (${pv.review.note})` : ""}` : "- 검토가격: 미입력 — 가격 비교만 보류",
+    (ctx ? ctx.reviewPrice : r.price.reviewPerM2 !== null) ? `- 검토가격: 세대당 총액 ${pv.review.household} · ${pv.review.perPyeong} · ${pv.review.perM2} — ${esc(pv.review.label)}, 기준일 ${pv.review.basisDate}${pv.review.note ? ` (${pv.review.note})` : ""}` : "- 검토가격: 미입력 — 가격 비교만 보류",
     pv.market.complexes ? `- 인근 유사 거래: 대표 비교단지 ${pv.market.complexes}곳(최대 5곳, 조건에 맞는 단지가 부족해도 채우지 않음) · ${pv.market.count}건 중위 ${pv.market.perPyeong} · ${pv.market.perM2} · 세대당 환산 ${pv.market.householdEquiv} · 단지별 중위 범위 ${pv.market.range} · ${pv.market.window} · ${pv.market.area}` : `- 인근 유사 거래: 조건에 맞는 대표 비교단지 없음(채우지 않음) · ${pv.market.window} · ${pv.market.area}`,
     `- 비교: ${r.price.text}`,
     `- ${pv.disclaimer}`, "");
@@ -71,11 +77,11 @@ export function groupObservationLines(rec: AnalysisRecord, r: AnalysisResult): s
   const runNo = run?.runNo;
   if (!g) return ["### 수동 확인 그룹 관측", "- 이 분석 실행에는 그룹 관측 설정이 없음(또는 v0.6.1 이전 실행) — 설정 후 ‘분석 다시 실행’ 시 포함"];
   const row = (name: string, x: ObservationResult["impact"]) => `| ${name} | ${x.complexes}/${x.strata} | ${x.pre.count}건 | ${x.post.count}건 | ${fmtMan(x.pre.medianPerM2)} | ${fmtMan(x.post.medianPerM2)} | ${fmtPct(x.changePct)} |`;
-  const w = run?.input ?? (hashOf(rec.working) === r.inputHash ? rec.working : undefined);
+  const w = run?.input;
   const names = (group: 'impact' | 'control') => {
     const labels = g.selectionLabels?.[group];
     if (labels) return labels.map(esc).join(', ') || '없음';
-    if (!w) return '당시 입력 스냅샷 없음 — 단지명 확인 불가';
+    if (!w) return `단지명 ${NOT_PRESERVED}`;
     return (w.observation?.[group] ?? []).map(k => esc(labelFor(w, k))).join(', ') || '없음';
   };
   return [
@@ -99,10 +105,11 @@ function labelFor(w: WorkingInputs, key: string): string {
 }
 
 function appendix(rec: AnalysisRecord, r: AnalysisResult): string {
-  const w = inputOf(rec, r);
+  const ctx = contextOf(rec, r);
   const L = ["## 근거 부록", "", "> 입지 뉴스·고시 자동 수집·자동 검증 기능은 없음. 아래 근거는 모두 사용자가 기록한 것임.", "", "### A. 근거 자료", "", "| 출처 종류 | 발행기관 | 문서명 | 발행일 | 자료 기준일 | 확인일 | 페이지·절 | 확인한 사실 | 기록 수준 | 내용 판단 |", "|---|---|---|---|---|---|---|---|---|---|"];
-  if (!w.evidence.length) L.push("| - | - | 등록된 근거 없음 | | | | | | | |");
-  w.evidence.forEach((e) => L.push(`| ${e.sourceType ? EVIDENCE_SOURCE_LABEL[e.sourceType] : "미기재"} | ${esc(e.publisher)} | ${esc(e.title)}${e.sourceRef ? ` (${esc(e.sourceRef)})` : ""} | ${e.publishedOn ?? "-"} | ${e.effectiveOn ?? "-"} | ${e.checkedOn ?? "-"} | ${esc(e.pageOrSection ?? "-")} | ${esc(e.fact)} | ${EVIDENCE_LEVEL_LABEL[evidenceLevel(e)]} | ${EVIDENCE_STATUS_LABEL[e.status]} |`));
+  if (!ctx) L.push(`| - | - | ${NOT_PRESERVED}(이 실행의 근거 목록이 남아 있지 않음 — 현재 근거로 채우지 않음) | | | | | | | |`);
+  else if (!ctx.evidence.length) L.push("| - | - | 등록된 근거 없음 | | | | | | | |");
+  (ctx?.evidence ?? []).forEach((e) => L.push(`| ${e.sourceType ? EVIDENCE_SOURCE_LABEL[e.sourceType] : "미기재"} | ${esc(e.publisher)} | ${esc(e.title)}${e.sourceRef ? ` (${esc(e.sourceRef)})` : ""} | ${e.publishedOn ?? "-"} | ${e.effectiveOn ?? "-"} | ${e.checkedOn ?? "-"} | ${esc(e.pageOrSection ?? "-")} | ${esc(e.fact)} | ${EVIDENCE_LEVEL_LABEL[evidenceLevel(e)]} | ${EVIDENCE_STATUS_LABEL[e.status]} |`));
   if (r.excludedEvents.length) L.push("", `- 기준일 이후 처음 알려진 사건(분석 제외): ${r.excludedEvents.map((e) => `${esc(e.name)}(${e.firstKnown})`).join(", ")}`);
   L.push("", "### B. 입지 사건 일정", "");
   r.events.forEach((e) => {
@@ -112,14 +119,15 @@ function appendix(rec: AnalysisRecord, r: AnalysisResult): string {
   });
   const m = r.market;
   L.push("### C. 비교거래 범위·출처", "",
-    `- 최근 ${m.recentWindow.months}개월(${m.recentWindow.start}~${m.recentWindow.end}), 유사면적 ${m.areaFilter ? `${fmtNum(m.areaFilter.minM2, 1)}~${fmtNum(m.areaFilter.maxM2, 1)}㎡` : "필터 없음(전용면적 미입력)"}, 반경 ${w.options.radiusM.toLocaleString("ko-KR")}m, 준공연도 차이 ${w.options.buildYearBand}년 이내`,
-    `- 거래 ${w.transactions.length}건 중 유효 ${m.validTrades}건, 대표 비교단지 포함 ${m.pooled.count}건 · 제외 사유: ${Object.entries(m.excludedTrades).map(([k, v]) => `${k} ${v}`).join(", ") || "없음"}`,
+    `- 최근 ${m.recentWindow.months}개월(${m.recentWindow.start}~${m.recentWindow.end}), 유사면적 ${m.areaFilter ? `${fmtNum(m.areaFilter.minM2, 1)}~${fmtNum(m.areaFilter.maxM2, 1)}㎡` : "필터 없음(전용면적 미입력)"}, 반경 ${ctx ? `${ctx.options.radiusM.toLocaleString("ko-KR")}m` : NOT_PRESERVED}, 준공연도 차이 ${ctx ? `${ctx.options.buildYearBand}년 이내` : NOT_PRESERVED}`,
+    `- 거래 ${ctx ? `${ctx.transactionsCount}건` : `${NOT_PRESERVED}`} 중 유효 ${m.validTrades}건, 대표 비교단지 포함 ${m.pooled.count}건 · 제외 사유: ${Object.entries(m.excludedTrades).map(([k, v]) => `${k} ${v}`).join(", ") || "없음"}`,
     `- 거리 미확인 확인 필요 후보(통계 제외): ${m.needsCheck.length ? m.needsCheck.map((c) => esc(c.name)).join(", ") : "없음"}`,
     `- 출처: ${m.sources.join(", ") || "없음"}${r.collection ? ` · ${r.collection.text}` : ""}`,
     "- 동일 단지·면적·유사층 거래를 같은 호실의 반복거래로 보지 않음. 거래 건수가 많아도 통계적 타당성을 보장하지 않음.", "",
     "| 제외·순위 밖 단지 | 사유 |", "|---|---|",
     ...m.complexes.filter((c) => c.status !== "selected").map((c) => `| ${esc(c.name)} | ${esc(c.reasons.join(", "))} |`));
-  if (w.dataLog.length) L.push("", "### D. 자료 조회 기록", "", ...w.dataLog.map((d) => `- ${d.at} · ${esc(d.source)} · ${esc(d.detail)}`));
+  if (!ctx) L.push("", "### D. 자료 조회 기록", "", `- ${NOT_PRESERVED}`);
+  else if (ctx.dataLog.length) L.push("", "### D. 자료 조회 기록", "", ...ctx.dataLog.map((d) => `- ${d.at} · ${esc(d.source)} · ${esc(d.detail)}`));
   const g = r.groupObservation;
   if (g?.monthly.length) {
     L.push("", "### E. 수동 확인 그룹 월별 중위 단가(전용㎡, 만원) · 동일 분석 표본", "", "| 월 | 영향권 중위 / 건수 | 비교군 중위 / 건수 |", "|---|---|---|",
@@ -135,7 +143,12 @@ function appendix(rec: AnalysisRecord, r: AnalysisResult): string {
   if (!r.citations) L.push("- 당시 근거 상세 미보존(v0.8 이전 실행) — 결과의 단지·사건 이름만 남아 있음");
   else for (const c of r.citations.items) {
     if (c.kind === "trade") L.push(`- [${c.id}] ${esc(c.title)} — 거리 ${dist(c.distanceM)} · 준공 ${c.buildYear ?? "미확인"} · 중위 ${fmtMan(c.medianPerM2)}/전용㎡ · 사용 거래 ${c.tradeTotal}건${c.tradeTotal > c.trades.length ? `(최근 ${c.trades.length}건 보존)` : ""}`);
-    else if (c.kind === "event") L.push(`- [${c.id}] ${esc(c.title)} — ${esc(c.summary)} · 일정 ${c.timeline.map((t) => `${t.type} ${t.date}(${t.status})`).join(", ")}`);
+    else if (c.kind === "event") {
+      L.push(`- [${c.id}] ${esc(c.title)} — ${esc(c.summary)} · 일정 ${c.timeline.map((t) => `${t.type} ${t.date}(${t.status})`).join(", ")}`);
+      if (!c.documents) L.push("  - 문서 상세: 당시 미보존(v0.8.1 이전 실행)");
+      else if (!c.documents.length) L.push("  - 연결된 근거 문서 없음");
+      else c.documents.forEach((d) => L.push(`  - 문서: 「${esc(d.title || "제목 미기재")}」 · 문서번호 ${esc(d.sourceRef || "미기재")} · ${esc(d.publisher || "발행기관 미기재")} · 발행일 ${d.publishedOn ?? "미기재"} · 페이지·절 ${esc(d.pageOrSection || "미기재")} · ${esc(d.level)} · ${esc(d.status)}${d.milestones.length ? ` · 근거 일정 ${d.milestones.join(", ")}` : ""}${d.afterAsOf ? " · 기준일 이후 문서" : ""}${d.fact ? ` — ${esc(d.fact)}` : ""}`));
+    }
     else L.push(`- [${c.id}] ${esc(c.title)} — ${esc(c.summary)} · 사용 단지 ${c.usage.filter((u) => u.used).length}/${c.usage.length}곳`);
   }
   return L.join("\n");
@@ -160,9 +173,9 @@ export function reportQuestions(rec: AnalysisRecord, r: AnalysisResult): string 
 
 export function reportDraft(rec: AnalysisRecord, r: AnalysisResult): string {
   const L = header(rec, r, "아파트 입지·가격 검토 보고서 초안");
-  const w = inputOf(rec, r);
+  const ctx = contextOf(rec, r);
   L.push("## 1. 검토 대상");
-  L.push(`- 본건 소재지는 ${w.property.address}임.`);
+  L.push(ctx ? `- 본건 소재지는 ${ctx.address}임.${ctx.displayName ? ` 사업지명은 ${ctx.displayName}임.` : ""}` : `- 본건 소재지는 ${r.property.address || NOT_PRESERVED}임(사업지명 ${NOT_PRESERVED}).`);
   L.push(`- 비교 타입 전용면적은 ${r.property.exclusiveAreaM2 ? `${fmtNum(r.property.exclusiveAreaM2)}㎡(${fmtNum(r.property.exclusivePyeong)}전용평)` : "미입력"}이며, 준공(예정)연도는 ${r.property.buildYear ?? "미입력"}임.`);
   L.push(`- 검토가격은 ${r.price.reviewText}(기준일 ${r.price.basisDate})임.${r.price.reviewPerM2 !== null ? ` 전용㎡당 ${fmtMan(r.price.reviewPerM2)}, 전용평당 ${fmtMan(r.price.reviewPerPyeong)}에 해당함.` : ""}`);
   L.push("", "## 2. 입지 변화");

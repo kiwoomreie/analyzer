@@ -3,7 +3,7 @@
 // - 입지 사건 전후 관측: 수동 확인 영향권·비교군의 전후 변동률과 ‘비교군 대비 관측 차이(%p)’
 import type { AnalysisResult } from "./analysis.ts";
 import type { ObservationResult } from "./observation.ts";
-import type { WorkingInputs } from "./model.ts";
+import type { ReviewPrice, WorkingInputs } from "./model.ts";
 import { LABELS } from "./contract.ts";
 import { deriveUnitPrices, fmtEok, fmtMan, fmtNum, fmtPct, fmtPp, M2_PER_PYEONG, toKrw } from "./units.ts";
 
@@ -15,14 +15,29 @@ export interface CurrentPriceView {
 }
 
 /** 현재 검토가격 비교(실행 당시 입력 w와 결과 r 기준) */
-export function currentPriceView(w: WorkingInputs, r: AnalysisResult): CurrentPriceView {
-  const area = w.property.exclusiveAreaM2 && w.property.exclusiveAreaM2 > 0 ? w.property.exclusiveAreaM2 : null;
-  const rp = w.reviewPrice;
+/** 가격 표시에 쓰는 당시 입력(실행본 보고서 맥락). null이면 결과에 남은 값(r.price·r.property)만 사용 */
+export interface PriceInput { reviewPrice?: ReviewPrice | null; exclusiveAreaM2?: number }
+export const priceInputOf = (w: WorkingInputs): PriceInput => ({ reviewPrice: w.reviewPrice, exclusiveAreaM2: w.property.exclusiveAreaM2 });
+
+export function currentPriceView(ctx: PriceInput | null, r: AnalysisResult): CurrentPriceView {
+  const areaIn = ctx ? ctx.exclusiveAreaM2 : r.property.exclusiveAreaM2 ?? undefined;
+  const area = areaIn && areaIn > 0 ? areaIn : null;
+  const rp = ctx?.reviewPrice;
   const m = r.market;
   const med = m.pooled.medianPerM2;
   const range = r.price.comparableRange;
   let review: CurrentPriceView["review"];
-  if (!rp) review = { status: "held", label: "검토가격", household: "미입력", perPyeong: "미입력", perM2: "미입력", basisDate: "-", note: "검토가격이 없어 가격 비교만 보류" };
+  if (!ctx) {
+    // 당시 입력 맥락이 없는 과거 실행본: 결과에 남은 검토가격 환산값만 표시(현재 작업본으로 채우지 않음)
+    const p = r.price;
+    review = {
+      status: p.reviewPerM2 != null ? "ok" : "held", label: `${p.reviewText} — 당시 입력 원문 미보존`,
+      household: p.reviewPerM2 != null && area ? `${fmtEok(p.reviewPerM2 * area)}(전용㎡당 × 당시 전용면적 환산)` : "당시 정보 미보존",
+      perPyeong: p.reviewPerPyeong != null ? `${fmtMan(p.reviewPerPyeong, 0)}/전용평` : "당시 정보 미보존",
+      perM2: p.reviewPerM2 != null ? `${fmtMan(p.reviewPerM2)}/전용㎡` : "당시 정보 미보존",
+      basisDate: p.basisDate,
+    };
+  } else if (!rp) review = { status: "held", label: "검토가격", household: "미입력", perPyeong: "미입력", perM2: "미입력", basisDate: "-", note: "검토가격이 없어 가격 비교만 보류" };
   else {
     const krw = toKrw(rp.amount, rp.unit);
     const u = krw === null ? null : deriveUnitPrices(krw, rp.basis, area, null);

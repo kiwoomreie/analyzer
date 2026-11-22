@@ -3,6 +3,7 @@
 import { runAnalysis } from "./analysis.ts";
 import { observationConfigured, observeGroups } from "./observation.ts";
 import { buildCitations } from "./citations.ts";
+import { buildReportContext } from "./runContext.ts";
 import { seoulNowIso } from "./dates.ts";
 import { hashOf } from "./hash.ts";
 import type { AnalysisRecord, RunRecord } from "./model.ts";
@@ -14,6 +15,8 @@ export function withRun(rec: AnalysisRecord, trigger: RunRecord["trigger"], at =
   if (observationConfigured(input)) result.groupObservation = observeGroups(input);
   // v0.8: 인용 근거(대표 비교단지 거래·입지 사건·관측)를 이 실행 시점 값으로 보존
   result.citations = buildCitations(input, result, at);
+  // v0.8.1: 과거 실행 보고서를 당시 제목·주소·검토가격·조건·근거 목록으로 다시 만들 수 있게 보존(입력 스냅샷은 최신 실행만 남으므로)
+  result.reportContext = buildReportContext(input);
   const older = rec.runs.map(({ input: _drop, ...r }) => r as RunRecord);
   return { ...rec, updatedAt: at, runs: [...older, { runNo: rec.runs.length + 1, at, trigger, inputHash: result.inputHash, input, result }] };
 }

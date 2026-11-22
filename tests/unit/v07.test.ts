@@ -6,7 +6,7 @@ import { complexKeyOf, newManualRecord } from "../../shared/model.ts";
 import { observeGroups } from "../../shared/observation.ts";
 import { withRun, latestRun } from "../../shared/runs.ts";
 import { reportDraft, reportSummary } from "../../shared/report.ts";
-import { currentPriceView, observationView } from "../../shared/priceView.ts";
+import { currentPriceView, observationView, priceInputOf } from "../../shared/priceView.ts";
 import { demoWorking } from "../../shared/demo.ts";
 
 test("사용·제외 단지: 사용·양쪽 중복·현재 거래 없음·전후 같은 면적구간 없음 사유", () => {
@@ -69,7 +69,7 @@ test("문구: ‘비교군 대비 관측 차이 +x%p’만 쓰고 인과 표현�
 test("현재 검토가격 비교: 세대당 총액과 전용평당가 구분, 면적 없으면 보류, 중위는 적정가가 아님", () => {
   const w = demoWorking();
   const rec = withRun(newManualRecord("lc_p", w), "manual");
-  const pv = currentPriceView(w, latestRun(rec).result!);
+  const pv = currentPriceView(priceInputOf(w), latestRun(rec).result!);
   assert.equal(pv.review.household, "9.6억원");
   assert.match(pv.review.perPyeong, /만원\/전용평$/);
   assert.match(pv.review.perM2, /만원\/전용㎡$/);
@@ -77,7 +77,7 @@ test("현재 검토가격 비교: 세대당 총액과 전용평당가 구분, �
   assert.match(pv.disclaimer, /적정가격이 아님/);
   const w2 = demoWorking();
   delete w2.property.exclusiveAreaM2;
-  const pv2 = currentPriceView(w2, latestRun(withRun(newManualRecord("lc_p2", w2), "manual")).result!);
+  const pv2 = currentPriceView(priceInputOf(w2), latestRun(withRun(newManualRecord("lc_p2", w2), "manual")).result!);
   assert.equal(pv2.review.status, "held");
   assert.equal(pv2.review.household, "9.6억원", "세대당 총액은 그대로");
   assert.equal(pv2.review.perPyeong, "전용면적 필요");

@@ -43,7 +43,7 @@ test('v0.6.1의 메타데이터 없는 과거 결과도 현재 그룹명으로 �
  let rec=withRun(newManualRecord('lc_legacy',fixture()),'manual');
  delete (rec.runs[0].result.groupObservation as any).selectionLabels;
  const old=rec.runs[0].result;rec.working.observation!.impact=[];rec=withRun(rec,'manual');
- assert.match(reportSummary(rec,old),/당시 입력 스냅샷 없음 — 단지명 확인 불가/);
+ assert.match(reportSummary(rec,old),/단지명 당시 정보 미보존/);
 });
 test('백업 복구 후 같은 입력 재실행의 최신 번호 유지',()=>{
  let rec=withRun(newManualRecord('lc_restored',fixture()),'manual');rec=withRun(rec,'manual');rec=JSON.parse(JSON.stringify(rec));
