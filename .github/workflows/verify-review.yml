@@ -1,0 +1,44 @@
+# 검토용 검사(배포 없음): review/** 브랜치에서만 실행. 타입검사·빌드·단위/통합·Vercel 빌드·브라우저 E2E(PC·390px).
+# 키·환경변수를 쓰지 않으며 외부 API를 호출하지 않는다. 결과 캡처와 정적 미리보기 파일만 산출물로 올린다.
+name: Verify review build (no deploy)
+
+on:
+  push:
+    branches: ["review/**"]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: node -v
+      - run: npm ci --ignore-scripts
+      - run: npm run typecheck
+      - run: npm run build
+      - run: npm test
+      - run: npm run build:vercel
+      - run: npx playwright install --with-deps chromium
+      - name: E2E (PC·390px)
+        run: |
+          mkdir -p shots
+          SHOT_DIR=$PWD/shots npm run test:e2e 2>&1 | tee e2e.log
+          test ${PIPESTATUS[0]} -eq 0
+      - name: Function list
+        if: always()
+        run: ls .vercel/output/functions || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: review-results
+          path: |
+            shots/
+            e2e.log
+            dist/preview/index.html
+          retention-days: 7
