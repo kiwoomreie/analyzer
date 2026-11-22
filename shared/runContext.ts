@@ -23,6 +23,7 @@ export interface ReportContext {
   transactionsCount: number;
   evidence: Evidence[];
   dataLog: DataLogEntry[];
+  dataLogTotal?: number;
 }
 
 /** 보고서에 남길 조회 기록 상한(최근 순) */
@@ -41,6 +42,7 @@ export function buildReportContext(w: WorkingInputs, source: ReportContext["sour
     transactionsCount: w.transactions.length,
     evidence: structuredClone(w.evidence ?? []),
     dataLog: (w.dataLog ?? []).slice(-MAX_DATALOG),
+    dataLogTotal: (w.dataLog ?? []).length,
   })) as ReportContext;
 }
 
@@ -54,4 +56,9 @@ export function contextOf(rec: AnalysisRecord, r: AnalysisResult): ReportContext
   const run = runOf(rec, r);
   if (run?.input) return buildReportContext(run.input, "input");
   return r.reportContext ?? null;
+}
+
+/** 파일명도 본문과 같은 당시 맥락을 사용하며 현재 작업본 제목을 대입하지 않는다. */
+export function reportFileTitle(rec: AnalysisRecord, r: AnalysisResult): string {
+  return contextOf(rec, r)?.title ?? "실행";
 }

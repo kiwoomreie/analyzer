@@ -1,3 +1,4 @@
+import { analysisStep } from "../shared/viewState.ts";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { deleteTemp, getTemp, putTemp, type SessionInfo } from "./api.ts";
 import { draftStore, localStore, memoryDrafts } from "./store.ts";
@@ -48,14 +49,14 @@ export function AnalysisView({ storage, recKey, session }: { storage: StorageKin
   const [saveState, setSaveState] = useState<string>("");
   const [saveError, setSaveError] = useState<string | null>(null);
   const [memoryOnly, setMemoryOnly] = useState(false);
-  const [step, setStep] = useState<number>(() => { try { return Number(sessionStorage.getItem(`la.step.${recKey}`)) || 1; } catch { return 1; } });
+  const [step, setStep] = useState<number>(() => { try { return analysisStep(sessionStorage.getItem(`la.step.${recKey}`)); } catch { return 1; } });
   const [cite, setCite] = useState<CiteTarget | null>(null);
   // 브라우저 ‘뒤로/앞으로’로 단계 이동(같은 분석 안에서만). 현재 단계를 첫 기록에 남겨 둠
   useEffect(() => {
     try { if (history.state?.laKey !== recKey) history.replaceState({ ...(history.state ?? {}), laStep: step, laKey: recKey }, "", location.href); } catch { /* 무시 */ }
     const on = (e: PopStateEvent) => {
       const st = e.state?.laStep;
-      if (e.state?.laKey === recKey && typeof st === "number" && st >= 1 && st <= 4) { setStep(st); try { sessionStorage.setItem(`la.step.${recKey}`, String(st)); } catch { /* 무시 */ } }
+      if (e.state?.laKey === recKey && typeof st === "number" && Number.isInteger(st) && st >= 1 && st <= 4) { setStep(st); try { sessionStorage.setItem(`la.step.${recKey}`, String(st)); } catch { /* 무시 */ } }
     };
     window.addEventListener("popstate", on);
     return () => window.removeEventListener("popstate", on);

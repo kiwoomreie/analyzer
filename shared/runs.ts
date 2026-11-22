@@ -17,7 +17,15 @@ export function withRun(rec: AnalysisRecord, trigger: RunRecord["trigger"], at =
   result.citations = buildCitations(input, result, at);
   // v0.8.1: 과거 실행 보고서를 당시 제목·주소·검토가격·조건·근거 목록으로 다시 만들 수 있게 보존(입력 스냅샷은 최신 실행만 남으므로)
   result.reportContext = buildReportContext(input);
-  const older = rec.runs.map(({ input: _drop, ...r }) => r as RunRecord);
+  // 업그레이드 전 최신 입력이 남아 있다면 압축 전에 당시 맥락을 보존한다.
+  // 현재 작업본으로 과거 정보를 채우거나 기존 보존본을 덮어쓰지 않는다.
+  const older = rec.runs.map(({ input: previousInput, ...r }) => {
+    if (!previousInput || hashOf(previousInput) !== r.inputHash) return r as RunRecord;
+    return { ...r, result: { ...r.result,
+      reportContext: r.result.reportContext ?? buildReportContext(previousInput),
+      citations: r.result.citations ?? buildCitations(previousInput, r.result, r.at),
+    } } as RunRecord;
+  });
   return { ...rec, updatedAt: at, runs: [...older, { runNo: rec.runs.length + 1, at, trigger, inputHash: result.inputHash, input, result }] };
 }
 

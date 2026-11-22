@@ -54,7 +54,7 @@ export function reportSummary(rec: AnalysisRecord, r: AnalysisResult): string {
   const ctx = contextOf(rec, r);
   const pv = currentPriceView(ctx, r);
   L.push("### 2-1. 현재 검토가격 비교",
-    (ctx ? ctx.reviewPrice : r.price.reviewPerM2 !== null) ? `- 검토가격: 세대당 총액 ${pv.review.household} · ${pv.review.perPyeong} · ${pv.review.perM2} — ${esc(pv.review.label)}, 기준일 ${pv.review.basisDate}${pv.review.note ? ` (${pv.review.note})` : ""}` : "- 검토가격: 미입력 — 가격 비교만 보류",
+    (ctx ? ctx.reviewPrice : r.price.reviewText !== "미입력") ? `- 검토가격: 세대당 총액 ${pv.review.household} · ${pv.review.perPyeong} · ${pv.review.perM2} — ${esc(pv.review.label)}, 기준일 ${pv.review.basisDate}${pv.review.note ? ` (${pv.review.note})` : ""}` : "- 검토가격: 미입력 — 가격 비교만 보류",
     pv.market.complexes ? `- 인근 유사 거래: 대표 비교단지 ${pv.market.complexes}곳(최대 5곳, 조건에 맞는 단지가 부족해도 채우지 않음) · ${pv.market.count}건 중위 ${pv.market.perPyeong} · ${pv.market.perM2} · 세대당 환산 ${pv.market.householdEquiv} · 단지별 중위 범위 ${pv.market.range} · ${pv.market.window} · ${pv.market.area}` : `- 인근 유사 거래: 조건에 맞는 대표 비교단지 없음(채우지 않음) · ${pv.market.window} · ${pv.market.area}`,
     `- 비교: ${r.price.text}`,
     `- ${pv.disclaimer}`, "");
@@ -128,6 +128,7 @@ function appendix(rec: AnalysisRecord, r: AnalysisResult): string {
     ...m.complexes.filter((c) => c.status !== "selected").map((c) => `| ${esc(c.name)} | ${esc(c.reasons.join(", "))} |`));
   if (!ctx) L.push("", "### D. 자료 조회 기록", "", `- ${NOT_PRESERVED}`);
   else if (ctx.dataLog.length) L.push("", "### D. 자료 조회 기록", "", ...ctx.dataLog.map((d) => `- ${d.at} · ${esc(d.source)} · ${esc(d.detail)}`));
+  if (ctx && (ctx.dataLogTotal ?? ctx.dataLog.length) > ctx.dataLog.length) L.push(`- 조회 기록 전체 ${ctx.dataLogTotal}건 중 최근 ${ctx.dataLog.length}건 보존(이전 기록 생략)`);
   const g = r.groupObservation;
   if (g?.monthly.length) {
     L.push("", "### E. 수동 확인 그룹 월별 중위 단가(전용㎡, 만원) · 동일 분석 표본", "", "| 월 | 영향권 중위 / 건수 | 비교군 중위 / 건수 |", "|---|---|---|",

@@ -1,0 +1,214 @@
+[
+  {
+    "path": ".github/workflows/pages.yml",
+    "change": "added"
+  },
+  {
+    "path": ".gitignore",
+    "change": "modified"
+  },
+  {
+    "path": "README.md",
+    "change": "modified"
+  },
+  {
+    "path": "package-lock.json",
+    "change": "modified"
+  },
+  {
+    "path": "package.json",
+    "change": "modified"
+  },
+  {
+    "path": "scripts/build-vercel.ts",
+    "change": "added"
+  },
+  {
+    "path": "scripts/vercel/launch.ts",
+    "change": "added"
+  },
+  {
+    "path": "scripts/vercel/login.ts",
+    "change": "added"
+  },
+  {
+    "path": "scripts/vercel/logout.ts",
+    "change": "added"
+  },
+  {
+    "path": "scripts/vercel/lookup.ts",
+    "change": "added"
+  },
+  {
+    "path": "scripts/vercel/session.ts",
+    "change": "added"
+  },
+  {
+    "path": "server/hosted.ts",
+    "change": "added"
+  },
+  {
+    "path": "shared/analysis.ts",
+    "change": "modified"
+  },
+  {
+    "path": "shared/citations.ts",
+    "change": "added"
+  },
+  {
+    "path": "shared/demo.ts",
+    "change": "modified"
+  },
+  {
+    "path": "shared/observation.ts",
+    "change": "modified"
+  },
+  {
+    "path": "shared/priceView.ts",
+    "change": "added"
+  },
+  {
+    "path": "shared/report.ts",
+    "change": "modified"
+  },
+  {
+    "path": "shared/runContext.ts",
+    "change": "added"
+  },
+  {
+    "path": "shared/runs.ts",
+    "change": "modified"
+  },
+  {
+    "path": "tests/e2e/flow.test.ts",
+    "change": "modified"
+  },
+  {
+    "path": "tests/e2e/v05.test.ts",
+    "change": "modified"
+  },
+  {
+    "path": "tests/e2e/v052.test.ts",
+    "change": "modified"
+  },
+  {
+    "path": "tests/e2e/v06.test.ts",
+    "change": "modified"
+  },
+  {
+    "path": "tests/e2e/v061.test.ts",
+    "change": "modified"
+  },
+  {
+    "path": "tests/e2e/v063.test.ts",
+    "change": "added"
+  },
+  {
+    "path": "tests/e2e/v07.test.ts",
+    "change": "added"
+  },
+  {
+    "path": "tests/e2e/v08.test.ts",
+    "change": "added"
+  },
+  {
+    "path": "tests/e2e/v081.test.ts",
+    "change": "added"
+  },
+  {
+    "path": "tests/e2e/vercel.test.ts",
+    "change": "added"
+  },
+  {
+    "path": "tests/helpers/stepAware.ts",
+    "change": "added"
+  },
+  {
+    "path": "tests/helpers/vercelLocal.ts",
+    "change": "added"
+  },
+  {
+    "path": "tests/integration/hosted.test.ts",
+    "change": "added"
+  },
+  {
+    "path": "tests/unit/v061.test.ts",
+    "change": "modified"
+  },
+  {
+    "path": "tests/unit/v062.test.ts",
+    "change": "modified"
+  },
+  {
+    "path": "tests/unit/v063.test.ts",
+    "change": "added"
+  },
+  {
+    "path": "tests/unit/v07.test.ts",
+    "change": "added"
+  },
+  {
+    "path": "tests/unit/v08.test.ts",
+    "change": "added"
+  },
+  {
+    "path": "tests/unit/v081.test.ts",
+    "change": "added"
+  },
+  {
+    "path": "vercel.json",
+    "change": "added"
+  },
+  {
+    "path": "web/AnalysisView.tsx",
+    "change": "modified"
+  },
+  {
+    "path": "web/api.ts",
+    "change": "modified"
+  },
+  {
+    "path": "web/components.tsx",
+    "change": "modified"
+  },
+  {
+    "path": "web/evidence.tsx",
+    "change": "added"
+  },
+  {
+    "path": "web/main.tsx",
+    "change": "modified"
+  },
+  {
+    "path": "web/nav.ts",
+    "change": "modified"
+  },
+  {
+    "path": "web/sections/EventsSection.tsx",
+    "change": "modified"
+  },
+  {
+    "path": "web/sections/InputSection.tsx",
+    "change": "modified"
+  },
+  {
+    "path": "web/sections/MarketSection.tsx",
+    "change": "modified"
+  },
+  {
+    "path": "web/sections/ObservationPanel.tsx",
+    "change": "modified"
+  },
+  {
+    "path": "web/sections/ReportSection.tsx",
+    "change": "modified"
+  },
+  {
+    "path": "web/sections/ResultExtras.tsx",
+    "change": "added"
+  },
+  {
+    "path": "web/styles.css",
+    "change": "modified"
+  }
+]
