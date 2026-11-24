@@ -51,22 +51,26 @@ for (const [vp, size] of [["pc", { width: 1340, height: 920 }], ["m390", { width
     // ① 대상·자료
     await ensureOpen(page, "sec-input");
     await page.fill("[data-testid=f-area]", "84");
-    assert.equal(await page.isDisabled("[data-testid=public-lookup]"), true, "키 없으면 자동 조회 미설정");
-    await page.setInputFiles("[data-testid=csv-import]", CSV);
-    await page.waitForSelector("[data-testid=market-msg]");
-    assert.match(await page.locator("[data-testid=meta]").innerText(), /전용면적\s*84㎡/);
-    await shot(page, `${vp}-01-data`);
-
-    // ② 입지·비교 조건
-    await page.click("[data-testid=step-next]");
-    assert.equal(await visibleStep(page), "2");
     await ensureOpen(page, "sec-events");
     await page.locator("#sec-events input[type=file]").first().setInputFiles(EVENTS);
     await page.waitForSelector("[data-testid=events-msg]");
+    await page.locator("#sec-input [data-testid=coord-input]").fill("37.412, 127.126");
+    await page.locator("#sec-input [data-testid=coord-input]").press("Tab");
+    await shot(page, `${vp}-01-data`);
+    await page.click("[data-testid=step-next]");
+    assert.equal(await visibleStep(page), "2");
+    assert.equal(await page.isDisabled("[data-testid=public-lookup]"), true);
+    await page.setInputFiles("[data-testid=csv-import]", CSV);
+    await page.waitForSelector("[data-testid=market-msg]");
     const panel = page.locator("[data-testid=observation-panel]");
     await panel.locator("[data-testid=obs-event]").selectOption({ label: "[가상] 가람선 누리역 신설" });
     await panel.locator("[data-testid=obs-milestone]").selectOption({ label: "고시 · 2024-02-20" });
     await panel.locator("[data-testid=obs-months]").selectOption("12");
+    for (const row of await panel.locator("[data-testid=obs-groups] tbody tr").all()) {
+      await row.locator("details > summary").click();
+      await row.locator("input[placeholder]").fill("37.413, 127.127");
+      await row.locator("input[placeholder]").press("Tab");
+    }
     for (const n of ["[가상]가람마을 1단지", "[가상]가람마을 2단지", "[가상]누리숲 아파트"]) await panel.getByRole("checkbox", { name: `${n} 영향권`, exact: true }).check();
     for (const n of ["[가상]동편마을 A", "[가상]은빛마을"]) await panel.getByRole("checkbox", { name: `${n} 비교군`, exact: true }).check();
     const sel = await panel.locator("[data-testid=obs-selection]").innerText();
@@ -141,7 +145,7 @@ test("실행 1 인용은 거래 삭제·재실행·새로고침·JSON 복원 후
   await page.click("[data-testid=save-browser]");
   await page.waitForFunction(() => location.hash.startsWith("#/app/l/"));
   await page.waitForSelector("[data-testid=hero]");
-  await page.click("[data-testid=step-1]");
+  await page.click("[data-testid=step-2]");
   await page.click("[data-testid=delete-all-tx]");
   await page.click("[data-testid=rerun]");
   await page.click("[data-testid=step-4]");

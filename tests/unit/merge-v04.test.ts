@@ -6,7 +6,7 @@ import { runAnalysis } from "../../shared/analysis.ts";
 import { emptyWorking, type Transaction } from "../../shared/model.ts";
 
 let n = 0;
-const tx = (o: Partial<Transaction> = {}): Transaction => ({ key: `t${++n}`, complexName: "A", exclusiveAreaM2: 84, floor: 5, priceKrw: 900_000_000, contractDate: "2026-09-10", cancelled: false, dataMode: "user", ...o });
+const tx = (o: Partial<Transaction> = {}): Transaction => ({ key: `t${++n}`, complexName: "A", exclusiveAreaM2: 84, floor: 5, priceKrw: 900_000_000, contractDate: "2026-09-10", knownOn: "2026-09-11", cancelled: false, dataMode: "user", ...o });
 const p95 = { priceKrw: 950_000_000 };
 const prices = (l: Transaction[]) => l.map((t) => t.priceKrw / 1e8).sort();
 const merge = (ex: Transaction[], inc: Transaction[]) => mergeTrades(ex, inc, "2026-11-18T10:00:00+09:00", "시험");

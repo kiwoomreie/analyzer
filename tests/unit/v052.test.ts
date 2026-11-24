@@ -8,7 +8,7 @@ import { withRun } from "../../shared/runs.ts";
 import { reportSummary } from "../../shared/report.ts";
 
 let n = 0;
-const tx = (o: Partial<Transaction> = {}): Transaction => ({ key: `u${++n}`, complexName: "서울단지", sggCd: "11110", dong: "청운동", exclusiveAreaM2: 84, floor: 5, priceKrw: 900_000_000, contractDate: "2026-09-10", cancelled: false, dataMode: "user", ...o });
+const tx = (o: Partial<Transaction> = {}): Transaction => ({ key: `u${++n}`, complexName: "서울단지", sggCd: "11110", dong: "청운동", exclusiveAreaM2: 84, floor: 5, priceKrw: 900_000_000, contractDate: "2026-09-10", knownOn: "2026-09-11", cancelled: false, dataMode: "user", ...o });
 const AT = "2026-11-18T16:50:00+09:00";
 const base = { contractDate: "2026-09-10" };
 /** 동조건 거래 g건(그중 c건 해제) + 별도 정상 거래 2건(층 9·11) */

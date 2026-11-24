@@ -87,4 +87,4 @@ export async function getTemp(key: string): Promise<{ record: AnalysisRecord; ex
 export const putTemp = (rec: AnalysisRecord) => write("PUT", `/api/temp-analyses/${encodeURIComponent(rec.key)}`, { record: rec });
 export const deleteTemp = (key: string) => write("DELETE", `/api/temp-analyses/${encodeURIComponent(key)}`);
 /** 새 앱 서버의 고정 어댑터(주소→좌표, 반경 주변 시군구, 국토부 실거래 전 페이지)만 호출. 키가 없으면 503(미설정). */
-export const lookupPublicData = (q: { address: string; lawdCode?: string; asOf: string; months: number; radiusM: number; center?: { lat: number; lng: number }; extraLawdCodes?: string[] }): Promise<import("../shared/applyData.ts").LookupPayload> => write("POST", "/api/public-data/lookup", q);
+export const lookupPublicData = (q: { address: string; lawdCode?: string; asOf: string; months: number; through?: string; radiusM: number; center?: { lat: number; lng: number }; extraLawdCodes?: string[] }): Promise<import("../shared/applyData.ts").LookupPayload> => write("POST", "/api/public-data/lookup", q);

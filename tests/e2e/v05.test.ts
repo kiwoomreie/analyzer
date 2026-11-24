@@ -138,3 +138,37 @@ test("API 키 없을 때 제한 기능을 화면에 표시, 가상 예시로 입
   await ctx.close();
   await keyless.close();
 });
+
+test('첫 화면에서 B 조회가 먼저 완료되면 지연된 A 응답으로 다시 열거나 저장하지 않는다', async () => {
+  const page=await browser.newPage({reducedMotion:'reduce'});
+  let release!: () => void;
+  const gate=new Promise<void>(resolve=>{release=resolve;});
+  let arrived!: () => void;
+  const started=new Promise<void>(resolve=>{arrived=resolve;});
+  try {
+    await page.route('**/api/public-data/lookup',async route=>{
+      if (route.request().postDataJSON().address==='[가상] A') {
+        arrived();
+        await gate;
+      }
+      await route.continue();
+    });
+    await page.goto(BASE+'/app');
+    await page.getByTestId('new-address').fill('[가상] A');
+    await page.getByTestId('start').click();
+    await started;
+    await page.getByTestId('new-address').fill('[가상] B');
+    await page.getByTestId('start').click();
+    await page.getByTestId('hero').waitFor();
+    const current=page.url();
+    const completed=page.waitForResponse(r=>r.url().endsWith('/api/public-data/lookup') && r.request().postDataJSON().address==='[가상] A');
+    release();
+    await (await completed).finished();
+    await page.waitForFunction(()=>document.querySelector('[data-testid=f-address]') !== null);
+    assert.equal(page.url(),current);
+    assert.equal(await page.getByTestId('f-address').inputValue(),'[가상] B');
+    await page.getByTestId('go-home').click();
+    assert.equal(await page.getByRole('button',{name:'[가상] A',exact:true}).count(),0);
+    assert.equal(await page.getByRole('button',{name:'[가상] B',exact:true}).count(),1);
+  } finally {release(); await page.close();}
+});

@@ -15,6 +15,7 @@ test("사용·제외 단지: 사용·양쪽 중복·현재 거래 없음·전후
   for (const [d, a] of [["2025-06-01", 84], ["2025-08-01", 89]] as const) w.transactions.push({ key: `c-${d}`, complexName: "C", exclusiveAreaM2: a, priceKrw: 84_000_000 * (a / 84), contractDate: d, cancelled: false, dataMode: "demo" });
   w.transactions.push({ key: "a-cancel", complexName: "A", exclusiveAreaM2: 84, priceKrw: 84_000_000, contractDate: "2025-06-20", cancelled: true, dataMode: "demo" });
   const kC = complexKeyOf({ complexName: "C" });
+  w.complexInfo.push({complexKey:kC,location:{lat:37.401,lng:127.1}});
   w.observation!.impact.push(kC, "N:사라진단지|||");
   w.observation!.control.push(w.observation!.impact[0]);
   const r = observeGroups(w);
@@ -46,7 +47,8 @@ test("유효한 비교가 아니면 차이를 숨김: 표본 부족·기준 일�
   const w2 = fixture();
   w2.events[0].milestones[0].announcedOn = "2026-12-01";
   const r2 = observeGroups(w2);
-  assert.ok(r2.differencePp !== null, "숫자는 계산되지만");
+  assert.equal(r2.differencePp,null);
+  assert.equal(r2.impact.pre.count,0);
   assert.equal(r2.valid, false);
   assert.equal(observationView(r2).difference, null, "차이는 숨김");
   assert.match(r2.warnings.join(" "), /기준일 이후\(2026-12-01\)에 알려진/);

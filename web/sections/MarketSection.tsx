@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Badge, ModeBadge, MonthlyBars, Num, Section, Select, Text, download } from "../components.tsx";
 import { demoWorking } from "../../shared/demo.ts";
 
@@ -9,6 +9,9 @@ function demoCsv(): string {
 }
 import type { SectionProps } from "../AnalysisView.tsx";
 import { lookupPublicData } from "../api.ts";
+import { tradeKnownOn } from "../../shared/asOf.ts";
+import { observationAnchor, observationOptions } from "../../shared/observation.ts";
+import { addMonths, monthDiff } from "../../shared/dates.ts";
 import { latestRun } from "../nav.ts";
 import type { ComplexInfo } from "../../shared/model.ts";
 import { transactionsFromCsv } from "../../shared/importers.ts";
@@ -19,14 +22,23 @@ import type { LookupPayload } from "../../shared/applyData.ts";
 import type { WorkingInputs } from "../../shared/model.ts";
 
 /** 조회 조건(응답이 어느 입력 기준인지 확인용) */
+function lookupWindow(w: WorkingInputs) {
+  const anchor = parseDateValue(observationAnchor(w).date);
+  if (parseDateValue(w.asOf)?.precision !== 'day' || anchor?.precision !== 'day' || anchor.raw > w.asOf) return {through:w.asOf, months:w.options.recentMonths};
+  const period = observationOptions(w).months;
+  const start = addMonths(anchor,-period), end = addMonths(anchor,period);
+  const last = end.d === 1 ? addMonths(end,-1) : end;
+  const through = last.raw < w.asOf ? last.raw : w.asOf;
+  return {through, months:1 + monthDiff(start,parseDateValue(through)!)};
+}
 function queryOf(w: WorkingInputs) {
   return {
-    주소: w.property.address, "분석 기준일": w.asOf, 반경: String(w.options.radiusM), "시군구 코드": w.property.lawdCode ?? "", "조회 기간": String(w.options.recentMonths),
+    주소: w.property.address, "분석 기준일": w.asOf, 반경: String(w.options.radiusM), "시군구 코드": w.property.lawdCode ?? "", "조회 기간": JSON.stringify(lookupWindow(w)),
     "본건 좌표": w.property.coordinates ? `${w.property.coordinates.lat},${w.property.coordinates.lng}` : "",
   };
 }
 import { parseDateValue, seoulNowIso } from "../../shared/dates.ts";
-import { fmtMan, fmtNum } from "../../shared/units.ts";
+import { fmtExclusivePyeong, fmtMan, fmtNum } from "../../shared/units.ts";
 import type { ComplexResult, Stats } from "../../shared/analysis.ts";
 
 const PAGE = 50;
@@ -48,7 +60,8 @@ export function MarketSection({ rec, getRec, update, setRec, session, part }: Se
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
   const seq = useRef(0);
-  const [held, setHeld] = useState<{ res: LookupPayload; changed: string[] } | null>(null);
+  const [held, setHeld] = useState<string[] | null>(null);
+  useEffect(() => () => { seq.current++; }, [rec.key]);
   const rowByKey = new Map(m.txRows.map((x) => [x.key, x]));
   const filtered = w.transactions.filter((t) => filter === "all" || (filter === "included" ? rowByKey.get(t.key)?.included : !rowByKey.get(t.key)?.included));
   const pages = Math.max(1, Math.ceil(filtered.length / PAGE));
@@ -87,12 +100,12 @@ export function MarketSection({ rec, getRec, update, setRec, session, part }: Se
     setHeld(null);
     try {
       const sw = start.working;
-      const res = await lookupPublicData({ address: sw.property.address, lawdCode: sw.property.lawdCode, asOf: sw.asOf, months: sw.options.recentMonths, radiusM: sw.options.radiusM, center: sw.property.coordinates ? { lat: sw.property.coordinates.lat, lng: sw.property.coordinates.lng } : undefined });
-      if (my !== seq.current) { setMsg("이전 조회의 응답 — 더 최근 조회가 있어 적용하지 않음"); return; }
+      const res = await lookupPublicData({ address: sw.property.address, lawdCode: sw.property.lawdCode, asOf: sw.asOf, ...lookupWindow(sw), radiusM: sw.options.radiusM, center: sw.property.coordinates ? { lat: sw.property.coordinates.lat, lng: sw.property.coordinates.lng } : undefined });
+      if (my !== seq.current || getRec()?.key !== start.key) return;
       const now = queryOf(getRec()!.working);
       const changed = (Object.keys(q) as (keyof typeof q)[]).filter((k) => q[k] !== now[k]);
       if (changed.length) {
-        setHeld({ res, changed });
+        setHeld(changed);
         setMsg(`조회 이후 ${changed.join("·")}이(가) 바뀌어 이전 조건의 결과 적용을 보류했습니다.`);
         return;
       }
@@ -174,10 +187,10 @@ export function MarketSection({ rec, getRec, update, setRec, session, part }: Se
 
       <h4>입지 사건 전후 관찰 {stale && <Badge tone="bad">이전 결과</Badge>} <span className="muted small">마지막 분석 실행 #{rec.runs[rec.runs.length - 1]?.runNo ?? "-"} 기준 · 대표 비교단지의 유사면적 거래 · 인과효과 아님</span></h4>
       <div className="table-scroll"><table className="tbl small" data-testid="observed-table">
-        <thead><tr><th>기준</th><th>기간</th><th>구분</th><th>건수</th><th>중위 단가/전용㎡</th><th>사분위</th></tr></thead>
+        <thead><tr><th>기준</th><th>기간</th><th>구분</th><th>건수</th><th>중위 단가/전용평</th><th>변동률</th></tr></thead>
         <tbody>
-          <tr><td rowSpan={2}>{r!.observed.anchor}</td><td rowSpan={2}>{r!.observed.window}</td><td>발표 전</td><td>{r!.observed.pre.count}</td><StatCells s={r!.observed.pre} /></tr>
-          <tr><td>발표 후</td><td>{r!.observed.post.count}</td><StatCells s={r!.observed.post} /></tr>
+          <tr><td rowSpan={2}>{r!.observed.anchor}</td><td rowSpan={2}>{r!.observed.window}</td><td>기준일 전</td><td>{r!.observed.pre.count}</td><td>{fmtExclusivePyeong(r!.observed.pre.medianPerM2)}</td><td rowSpan={2}>{r!.observed.changePct === null ? "미산출" : r!.observed.changePct.toFixed(1)+"%"}</td></tr>
+          <tr><td>기준일 이후</td><td>{r!.observed.post.count}</td><td>{fmtExclusivePyeong(r!.observed.post.medianPerM2)}</td></tr>
         </tbody>
       </table></div>
       <p className="small">{r!.observed.text}</p>
@@ -187,6 +200,7 @@ export function MarketSection({ rec, getRec, update, setRec, session, part }: Se
   );
   return (
     <Section id="sec-market" defaultOpen title="실거래 자료" summary={`거래 ${w.transactions.length}건 · 결과 기준 단지 ${m.complexes.length}곳(대표 ${m.comparables.length}, 확인 필요 ${m.needsCheck.length})`}>
+      <p className="small">조회 범위 · {lookupWindow(w).through.slice(0,7)}까지 {lookupWindow(w).months}개월 · 본건 반경 {w.options.radiusM}m</p>
       <div className="toolbar">
         <label className="filebtn">실거래 CSV 가져오기<input type="file" accept=".csv" data-testid="csv-import" onChange={(e: any) => { const f = e.target.files?.[0]; if (f) importCsv(f); e.target.value = ""; }} /></label>
         <button onClick={lookup} disabled={!configured || busy} data-testid="public-lookup">{busy ? "조회 중…" : "주소로 좌표·실거래 자동 조회"}</button>
@@ -198,8 +212,8 @@ export function MarketSection({ rec, getRec, update, setRec, session, part }: Se
       {msg && <div className="banner info small" data-testid="market-msg">{msg}</div>}
       {held && (
         <div className="banner warn small" data-testid="lookup-held">
-          조회 이후 {held.changed.join("·")}이(가) 바뀌어 이전 조건의 결과(거래 {held.res.trades.length}건) 적용을 보류했습니다. 현재 입력과 조건이 다른 결과입니다.
-          <div className="toolbar"><button onClick={() => { applyRes(held.res); setHeld(null); }} data-testid="lookup-apply-anyway">그래도 적용(현재 입력 유지, 거래만 병합)</button><button onClick={() => { setHeld(null); setMsg("보류한 조회 결과를 버렸습니다."); }} data-testid="lookup-discard">버리기</button></div>
+          조회 이후 {held.join("·")}이(가) 바뀌어 적용을 보류하고 이전 응답을 폐기했습니다. 현재 조건으로 다시 조회하세요.
+          <button onClick={() => setHeld(null)} data-testid="lookup-discard">확인</button>
         </div>
       )}
       {(diag.identicalGroups.length > 0 || diag.conflictGroups.length > 0) && (
@@ -208,7 +222,7 @@ export function MarketSection({ rec, getRec, update, setRec, session, part }: Se
           {cleanable > 0 && <div className="toolbar"><button onClick={cleanup} data-testid="cleanup-duplicates">같은 내용 사본 정리(정리 전 버전 자동 보관)</button></div>}
         </div>
       )}
-      <p className="muted small">같은 자료를 여러 번·다른 순서로 가져와도 같은 거래는 한 번만 집계합니다(식별: 원천 거래 식별자 → 없으면 단지·면적·층·동·계약일·금액이 같은 ‘동조건 묶음’ 단위로 건수·해제 건수만 대사, 입력 순서는 쓰지 않음). 금액만 다른 같은 조건 거래는 자동 정정하지 않고 둘 다 보존해 ‘별도 거래/정정 확인 필요’로 표시합니다. CSV 필수 열: 단지명, 전용면적, 거래금액(만원) 또는 거래금액(원), 계약일 또는 계약년월. 선택 열: 단지코드, 시군구코드, 법정동, 지번, 동, 층, 해제여부, 해제사유발생일, 건축년도, 거래ID, ID출처(거래ID를 발급한 기관·시스템 — 없으면 ‘출처 미지정’으로 보아 ID 값 변경을 자동 반영하지 않음).</p>
+      <p className="muted small">같은 자료를 여러 번·다른 순서로 가져와도 같은 거래는 한 번만 집계합니다(식별: 원천 거래 식별자 → 없으면 단지·면적·층·동·계약일·금액이 같은 ‘동조건 묶음’ 단위로 건수·해제 건수만 대사, 입력 순서는 쓰지 않음). 금액만 다른 같은 조건 거래는 자동 정정하지 않고 둘 다 보존해 ‘별도 거래/정정 확인 필요’로 표시합니다. CSV 필수 열: 단지명, 전용면적, 거래금액(만원) 또는 거래금액(원), 계약일 또는 계약년월. 자료공개일(YYYY-MM-DD) 열이 없으면 가져온 날을 사용합니다. 선택 열: 단지코드, 시군구코드, 법정동, 지번, 동, 층, 해제여부, 해제사유발생일, 건축년도, 거래ID, ID출처(거래ID를 발급한 기관·시스템 — 없으면 ‘출처 미지정’으로 보아 ID 값 변경을 자동 반영하지 않음).</p>
 
       {lastCol && (
         <details className="sub-details" data-testid="collection-report" open={lastCol.trades.status !== "complete" || lastCol.regionDiscovery.status !== "sampled" || lastCol.complexGeocode.status !== "complete"}>
@@ -238,7 +252,7 @@ export function MarketSection({ rec, getRec, update, setRec, session, part }: Se
       </div>
       <div className="table-scroll">
         <table className="tbl small" data-testid="tx-table">
-          <thead><tr><th>단지</th><th>전용㎡</th><th>층</th><th>금액(만원)</th><th>㎡당(만원)</th><th>계약일</th><th>해제·정정</th><th>결과 반영</th><th>사용자 제외 사유</th><th>자료·출처</th></tr></thead>
+          <thead><tr><th>단지</th><th>전용㎡</th><th>층</th><th>금액(만원)</th><th>㎡당(만원)</th><th>계약일 / 자료 공개·확인일</th><th>해제·정정</th><th>결과 반영</th><th>사용자 제외 사유</th><th>자료·출처</th></tr></thead>
           <tbody>
             {shown.map((t) => {
               const i = w.transactions.findIndex((x) => x.key === t.key);
@@ -246,7 +260,7 @@ export function MarketSection({ rec, getRec, update, setRec, session, part }: Se
               return (
                 <tr key={t.key} className={row && !row.included ? "excluded" : ""}>
                   <td>{t.complexName}{t.dong ? <div className="muted">{t.dong} {t.jibun ?? ""}</div> : null}</td><td>{fmtNum(t.exclusiveAreaM2)}</td><td>{t.floor ?? "-"}</td><td>{(t.priceKrw / 1e4).toLocaleString("ko-KR")}</td>
-                  <td>{fmtNum(t.priceKrw / t.exclusiveAreaM2 / 1e4, 1)}</td><td>{t.contractDate}</td>
+                  <td>{fmtNum(t.priceKrw / t.exclusiveAreaM2 / 1e4, 1)}</td><td>{t.contractDate}<div className="muted">{tradeKnownOn(t) || (t.dataMode === "demo" ? "가상 계약일 기준" : "공개일 미확인")}</div></td>
                   <td>{t.cancelled ? "해제" : ""}{t.reviewFlag && <div title={t.reviewFlag.note}><Badge tone="warn">{t.reviewFlag.kind === "idConflict" ? "ID 충돌 확인 필요" : t.reviewFlag.kind === "idChangeUnconfirmed" ? "ID 값 변경 보류" : "별도 거래/정정 확인 필요"}</Badge></div>}{t.idKey && ambLive.has(t.idKey) && <div className="muted" data-testid="amb-note">같은 조건 {ambLive.get(t.idKey)!.size}건 중 해제 {ambLive.get(t.idKey)!.cancelled}건(대상 특정 불가)</div>}{t.officialId && <div className="muted">ID {t.officialId}·출처 {t.idScope ?? "미지정"}</div>}{(t.sameKeyCount ?? 1) > 1 && <div className="muted">같은 조건 {t.sameKeyCount}건(구별 불가)</div>}{t.revisions?.length ? <div className="muted">{t.revisions.map((v) => v.change).join(" / ")}</div> : null}</td>
                   <td className="wide-cell">{row ? (row.included ? "포함" : row.reasons.join(", ")) : <span className="warn-text">결과 이후 추가 — 재분석 필요</span>}</td>
                   <td><Text label="" value={t.manualExclusion} onChange={(v) => update((x) => { if (i >= 0) x.transactions[i].manualExclusion = v; })} /></td>

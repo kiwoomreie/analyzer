@@ -56,7 +56,7 @@ test("[1] 손상 원문 보관 후 새로 시작은 사용자 실행으로만, �
 
 // ── 2. 거래 ID
 let n = 0;
-const tx = (o: Partial<Transaction> = {}): Transaction => ({ key: `t${++n}`, complexName: "서울단지", sggCd: "11110", dong: "청운동", exclusiveAreaM2: 84, floor: 5, priceKrw: 900_000_000, contractDate: "2026-09-10", cancelled: false, dataMode: "user", ...o });
+const tx = (o: Partial<Transaction> = {}): Transaction => ({ key: `t${++n}`, complexName: "서울단지", sggCd: "11110", dong: "청운동", exclusiveAreaM2: 84, floor: 5, priceKrw: 900_000_000, contractDate: "2026-09-10", knownOn: "2026-09-11", cancelled: false, dataMode: "user", ...o });
 const AT = "2026-11-18T14:00:00+09:00";
 
 test("[2-재현] 빈 목록에 같은 ID가 한 배치에 두 번: 1건만 보존, 이후 취소 시 유령 정상 거래 없음", () => {

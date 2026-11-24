@@ -1,5 +1,5 @@
 import { createRoot } from "react-dom/client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { getSession, getSessionError, login, logout, lookupPublicData, type SessionInfo } from "./api.ts";
 import { draftStore, localStore, memoryDrafts } from "./store.ts";
 import { AnalysisView, reduceMotion } from "./AnalysisView.tsx";
@@ -9,7 +9,7 @@ import { LABELS, type MoneyUnit } from "../shared/contract.ts";
 import { APP_NAME, emptyWorking, newKey, newManualRecord, ORIGIN_LABEL, type AnalysisRecord, type ReviewPrice } from "../shared/model.ts";
 import { detectFile, makeBackup } from "../shared/importers.ts";
 import { demoWorking } from "../shared/demo.ts";
-import { seoulNowIso, seoulToday } from "../shared/dates.ts";
+import { parseDateValue, seoulNowIso, seoulToday } from "../shared/dates.ts";
 import { applyLookup } from "../shared/applyData.ts";
 
 function App() {
@@ -53,12 +53,20 @@ function Home({ session }: { session: SessionInfo | null }) {
   const [busy, setBusy] = useState(false);
   const [health, setHealth] = useState(() => localStore.health());
   const [exported, setExported] = useState(false);
-  const [f, setF] = useState<NewForm>({ unit: "KRW_100M", basis: "household", asOf: seoulToday() });
+  const [f, setForm] = useState<NewForm>({ unit: "KRW_100M", basis: "household", asOf: seoulToday() });
+  const sequence = useRef(0);
+  useEffect(() => () => { sequence.current++; }, []);
+  const setF = (next: NewForm) => {
+    sequence.current++;
+    setBusy(false);
+    setForm(next);
+  };
   const autoLookup = session?.config.publicData === "configured" || session?.config.geocoder === "configured";
 
   const start = async () => {
     if (!f.address?.trim()) return setMsg({ tone: "bad", text: "주소를 입력하십시오" });
-    if (!f.asOf || !/^\d{4}-\d{2}-\d{2}$/.test(f.asOf)) return setMsg({ tone: "bad", text: "분석 기준일(YYYY-MM-DD)을 확인하십시오" });
+    if (!f.asOf || parseDateValue(f.asOf)?.precision !== "day") return setMsg({ tone: "bad", text: "분석 기준일(YYYY-MM-DD)을 확인하십시오" });
+    const request = ++sequence.current;
     const w = emptyWorking(f.address.trim(), f.asOf);
     w.property = { address: f.address.trim(), displayName: f.name, exclusiveAreaM2: f.area, buildYear: f.buildYear };
     if (f.price !== undefined) w.reviewPrice = { amount: f.price, unit: f.unit, basis: f.basis, basisDate: f.priceDate, label: "검토가격", dataMode: "user" };
@@ -70,17 +78,19 @@ function Home({ session }: { session: SessionInfo | null }) {
         applyLookup(w, res, seoulNowIso());
       } catch (e) {
         w.dataLog.push({ at: seoulNowIso(), source: "공공·지도 API", detail: `자동 조회 실패: ${(e as Error).message}` });
-      } finally { setBusy(false); }
+      } finally { if (request === sequence.current) setBusy(false); }
+      if (request !== sequence.current) return;
     }
     openDraft(withRun(newManualRecord(newKey("dr"), w, "manual"), "auto-create"));
   };
 
   /** 탭 저장소가 막혀도 분석은 열되, 메모리에만 있다는 사실을 화면에 표시 */
   const openDraft = (rec: AnalysisRecord) => {
+    sequence.current++;
     if (draftStore.put(rec)) memoryDrafts.set(rec.key, rec);
     // 주소 입력 카드가 위로 올라가며 줄어든 뒤 상단 분석 대상 요약으로 이어짐(동작 줄이기 설정이면 바로 이동)
     const card = document.querySelector(".start-card");
-    if (card && !reduceMotion()) { card.classList.add("launching"); setTimeout(() => navigate(`/app/d/${rec.key}`), 260); return; }
+    if (card && !reduceMotion()) { card.classList.add("launching"); const current = sequence.current; setTimeout(() => { if (current === sequence.current) navigate(`/app/d/${rec.key}`); }, 260); return; }
     navigate(`/app/d/${rec.key}`);
   };
 

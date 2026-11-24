@@ -2,7 +2,7 @@
 // 모든 경로에 공통 안전 검사를 적용한다. 입력 내용의 HTML·스크립트·수식·URL은 실행·조회하지 않는다.
 import { isSecretLike, isForbiddenKey, scanSafety, type SafetyIssue } from "./safety.ts";
 import { validateContractDocument, type ContractValidation } from "./validate.ts";
-import { parseDateValue } from "./dates.ts";
+import { seoulToday, parseDateValue } from "./dates.ts";
 import {
   ANALYSIS_FORMAT, migrateRecord, newKey, type AnalysisRecord, type DataMode, type Evidence,
   type LocationEvent, type Transaction, type WorkingInputs,
@@ -39,7 +39,7 @@ export function checkWorkingShape(w: WorkingInputs): string[] {
   for (const k of ["events", "evidence", "transactions", "complexInfo", "attachments"] as const) if (!Array.isArray((w as any)[k])) errs.push(`${k}: 목록 형식 오류`);
   if (w.reviewPrice) { num(w.reviewPrice.amount, "reviewPrice.amount", false); date(w.reviewPrice.basisDate, "reviewPrice.basisDate"); if (!["KRW", "KRW_10K", "KRW_100M"].includes(w.reviewPrice.unit)) errs.push("reviewPrice.unit: 단위 오류"); if (!["household", "perExclusiveM2", "perExclusivePyeong"].includes(w.reviewPrice.basis)) errs.push("reviewPrice.basis: 가격 기준 오류"); }
   for (const [k, v] of Object.entries(w.schedule ?? {})) date(v, `schedule.${k}`);
-  (w.transactions ?? []).forEach((t, i) => { num(t.priceKrw, `transactions[${i}].priceKrw`, false); num(t.exclusiveAreaM2, `transactions[${i}].exclusiveAreaM2`, false); date(t.contractDate, `transactions[${i}].contractDate`); });
+  (w.transactions ?? []).forEach((t, i) => { num(t.priceKrw, `transactions[${i}].priceKrw`, false); num(t.exclusiveAreaM2, `transactions[${i}].exclusiveAreaM2`, false); date(t.knownOn, `transactions[${i}].knownOn`); date(t.contractDate, `transactions[${i}].contractDate`); });
   (w.events ?? []).forEach((e, i) => (e.milestones ?? []).forEach((m, j) => { date(m.date, `events[${i}].milestones[${j}].date`); date(m.announcedOn, `events[${i}].milestones[${j}].announcedOn`); }));
   if ((w.transactions ?? []).length > 20000) errs.push("transactions: 20,000건 초과");
   return errs.slice(0, 30);
@@ -78,6 +78,7 @@ const HEADER_MAP: Record<string, keyof RawTx> = {
   층: "floor", floor: "floor",
   거래금액만원: "priceMan", 거래금액: "priceMan", dealamount: "priceMan",
   거래금액원: "priceKrw", pricekrw: "priceKrw",
+  자료공개일: "knownOn", knownon: "knownOn",
   계약일: "contractDate", contractdate: "contractDate",
   계약년월: "ym", dealym: "ym", 계약일자: "day",
   해제여부: "cancelled", cdealtype: "cancelled", cancelled: "cancelled",
@@ -91,7 +92,7 @@ const HEADER_MAP: Record<string, keyof RawTx> = {
   id출처: "idScope", 거래id출처: "idScope", idscope: "idScope",
   건축년도: "buildYear", 준공연도: "buildYear", buildyear: "buildYear",
 };
-interface RawTx { complexName?: string; area?: string; floor?: string; priceMan?: string; priceKrw?: string; contractDate?: string; ym?: string; day?: string; cancelled?: string; cancelDate?: string; dong?: string; jibun?: string; sggCd?: string; complexId?: string; aptDong?: string; officialId?: string; idScope?: string; buildYear?: string }
+interface RawTx { knownOn?: string; complexName?: string; area?: string; floor?: string; priceMan?: string; priceKrw?: string; contractDate?: string; ym?: string; day?: string; cancelled?: string; cancelDate?: string; dong?: string; jibun?: string; sggCd?: string; complexId?: string; aptDong?: string; officialId?: string; idScope?: string; buildYear?: string }
 
 export interface ImportOutcome<T> { ok: boolean; items: T[]; errors: string[]; skipped: number }
 
@@ -103,6 +104,10 @@ export function transactionsFromCsv(text: string, dataMode: DataMode = "user", s
   try { rows = parseCsv(text); } catch (e) { return { ok: false, items: [], errors: [(e as Error).message], skipped: 0 }; }
   if (rows.length < 2) return { ok: false, items: [], errors: ["머리행과 자료행이 필요함"], skipped: 0 };
   const header = rows[0].map((h) => h.trim());
+  const basisColumn = header.findIndex(h => h === '가격기준' || h.toLowerCase() === 'pricebasis');
+  if (basisColumn >= 0 && rows.slice(1).some(row => !['세대당','세대당 총액','household'].includes(row[basisColumn]?.trim()))) {
+    return {ok:false,items:[],errors:['가격 기준 불일치 · 전용면적과 세대 전체 거래금액이 필요합니다.'],skipped:0};
+  }
   const forbidden = header.filter((h) => isForbiddenKey(h));
   if (forbidden.length) return { ok: false, items: [], errors: ["금지 필드(인증·주소·콜백 등) 머리행이 있어 파일 전체를 거절함"], skipped: 0 };
   const idx = header.map((h) => HEADER_MAP[h.toLowerCase().replace(/[\s_()\-㎡]/g, "").replace("m²", "m2")] ?? null);
@@ -121,7 +126,7 @@ export function transactionsFromCsv(text: string, dataMode: DataMode = "user", s
     if (!cd && raw.ym) { const ym = raw.ym.replace(/\D/g, ""); cd = ym.length === 6 ? `${ym.slice(0, 4)}-${ym.slice(4)}${raw.day ? `-${raw.day.padStart(2, "0")}` : ""}` : ""; }
     cd = cd.replace(/\./g, "-").replace(/\//g, "-");
     if (/^\d{8}$/.test(cd)) cd = `${cd.slice(0, 4)}-${cd.slice(4, 6)}-${cd.slice(6)}`;
-    if (!raw.complexName || !(area > 0) || !(price > 0) || !parseDateValue(cd)) {
+    if (!raw.complexName || !(area > 0) || !(price > 0) || !parseDateValue(cd) || (raw.knownOn && !parseDateValue(raw.knownOn))) {
       skipped++;
       if (errors.length < 10) errors.push(`${i + 2}행: 단지명·면적·금액·계약일 확인 필요 — 건너뜀`);
       return;
@@ -129,7 +134,7 @@ export function transactionsFromCsv(text: string, dataMode: DataMode = "user", s
     const canc = (raw.cancelled ?? "").trim();
     items.push({
       key: newKey("tx"), complexName: raw.complexName.slice(0, 80), exclusiveAreaM2: area, floor: Number.isFinite(toNum(raw.floor)) ? toNum(raw.floor) : undefined,
-      priceKrw: Math.round(price), contractDate: cd, cancelled: canc !== "" && canc !== "0" && canc.toLowerCase() !== "n" && canc !== "아니오",
+      knownOn: raw.knownOn || seoulToday(), priceKrw: Math.round(price), contractDate: cd, cancelled: canc !== "" && canc !== "0" && canc.toLowerCase() !== "n" && canc !== "아니오",
       cancelDate: raw.cancelDate || undefined, dong: raw.dong ? raw.dong.slice(0, 40) : undefined,
       jibun: raw.jibun ? raw.jibun.slice(0, 40) : undefined, sggCd: raw.sggCd && /^\d{5}$/.test(raw.sggCd) ? raw.sggCd : undefined,
       complexId: raw.complexId ? raw.complexId.slice(0, 40) : undefined, aptDong: raw.aptDong ? raw.aptDong.slice(0, 20) : undefined,
@@ -154,21 +159,25 @@ export function generalJsonImport(data: unknown): { ok: boolean; result?: Genera
   const mode: DataMode = d.dataMode === "demo" ? "demo" : "user";
   const errs: string[] = [];
   const arr = (x: unknown) => (Array.isArray(x) ? x : x === undefined ? [] : (errs.push("목록 형식 오류"), []));
-  const events: LocationEvent[] = arr(d.events).map((e: any) => ({
-    key: newKey("ev"), category: ["transport", "amenity", "development", "supply"].includes(e.category) ? e.category : "development", name: String(e.name ?? "이름 없음").slice(0, 120),
+  const eventRows = arr(d.events), docRows = arr(d.evidence);
+  const ids = (list: any[], prefix: string) => list.map(() => newKey(prefix));
+  const eventIds = ids(eventRows, 'ev'), docIds = ids(docRows, 'evd');
+  const remap = (keys: unknown, rows: any[], fresh: string[]) => new Set(Array.isArray(keys) ? rows.flatMap((r,i) => r.key && keys.includes(r.key) ? [fresh[i]] : []) : []);
+  const events: LocationEvent[] = eventRows.map((e: any,i) => ({
+    key: eventIds[i], category: ["transport", "amenity", "development", "supply"].includes(e.category) ? e.category : "development", name: String(e.name ?? "이름 없음").slice(0, 120),
     direction: ["favorable", "adverse", "mixed", "unknown"].includes(e.direction) ? e.direction : "unknown",
     location: e.location && Number.isFinite(e.location.lat) && Number.isFinite(e.location.lng) ? { lat: e.location.lat, lng: e.location.lng } : undefined,
-    milestones: (Array.isArray(e.milestones) ? e.milestones : []).map((m: any) => ({ key: newKey("ms"), type: m.type ?? "other", status: m.status === "actual" ? "actual" : "planned", date: m.date, announcedOn: m.announcedOn, collectedOn: m.collectedOn, note: m.note, evidenceKeys: [] })),
-    access: e.access, supply: e.supply, evidenceKeys: [], dataMode: mode, note: e.note,
+    milestones: (Array.isArray(e.milestones) ? e.milestones : []).map((m: any) => ({ key: newKey("ms"), type: m.type ?? "other", status: m.status === "actual" ? "actual" : "planned", date: m.date, announcedOn: m.announcedOn, collectedOn: m.collectedOn, note: m.note, evidenceKeys: [...remap(m.evidenceKeys,docRows,docIds)] })),
+    access: e.access, supply: e.supply, evidenceKeys: [...remap(e.evidenceKeys,docRows,docIds)], dataMode: mode, note: e.note,
   }));
-  const evidence: Evidence[] = arr(d.evidence).map((e: any) => ({
-    key: newKey("evd"), publisher: String(e.publisher ?? "미기재"), title: String(e.title ?? "미기재"), sourceRef: e.sourceRef, sourceUrl: e.sourceUrl, publishedOn: e.publishedOn, effectiveOn: e.effectiveOn, checkedOn: e.checkedOn, pageOrSection: e.pageOrSection,
-    fact: String(e.fact ?? ""), status: ["confirmed", "needsApplicability", "inconsistent", "hardToVerify"].includes(e.status) ? e.status : "hardToVerify", linked: [], dataMode: mode,
+  const evidence: Evidence[] = docRows.map((e: any,i) => ({
+    key: docIds[i], sourceType:e.sourceType, originalReviewed:e.originalReviewed === true, publisher: String(e.publisher ?? "미기재"), title: String(e.title ?? "미기재"), sourceRef: e.sourceRef, sourceUrl: e.sourceUrl, publishedOn: e.publishedOn, effectiveOn: e.effectiveOn, checkedOn: e.checkedOn, pageOrSection: e.pageOrSection,
+    fact: String(e.fact ?? ""), status: ["confirmed", "needsApplicability", "inconsistent", "hardToVerify"].includes(e.status) ? e.status : "hardToVerify", linked: [...remap(e.linked,eventRows,eventIds)], dataMode: mode,
   }));
   const transactions: Transaction[] = arr(d.transactions).flatMap((t: any) => {
     if (!t || typeof t.complexName !== "string" || !(t.exclusiveAreaM2 > 0) || !(t.priceKrw > 0) || !parseDateValue(t.contractDate)) { errs.push("거래 1건 형식 오류 — 건너뜀"); return []; }
     const str = (v: unknown, n: number) => (typeof v === "string" && v ? v.slice(0, n) : undefined);
-    return [{ key: newKey("tx"), complexName: t.complexName, dong: str(t.dong, 40), jibun: str(t.jibun, 40), sggCd: str(t.sggCd, 5), complexId: str(t.complexId, 40), aptDong: str(t.aptDong, 20), officialId: str(t.officialId, 80), idScope: str(t.idScope, 60), exclusiveAreaM2: t.exclusiveAreaM2, floor: t.floor, priceKrw: Math.round(t.priceKrw), contractDate: t.contractDate, cancelled: !!t.cancelled, cancelDate: t.cancelDate, buildYear: t.buildYear, dataMode: mode, source: String(d.source ?? "사용자 JSON").slice(0, 120) } as Transaction];
+    return [{ key: newKey("tx"), complexName: t.complexName, dong: str(t.dong, 40), jibun: str(t.jibun, 40), sggCd: str(t.sggCd, 5), complexId: str(t.complexId, 40), aptDong: str(t.aptDong, 20), officialId: str(t.officialId, 80), idScope: str(t.idScope, 60), exclusiveAreaM2: t.exclusiveAreaM2, floor: t.floor, priceKrw: Math.round(t.priceKrw), contractDate: t.contractDate, knownOn: t.knownOn || (mode === "demo" ? t.contractDate : seoulToday()), cancelled: !!t.cancelled, cancelDate: t.cancelDate, buildYear: t.buildYear, dataMode: mode, source: String(d.source ?? "사용자 JSON").slice(0, 120) } as Transaction];
   });
   return { ok: true, result: { events, evidence, transactions }, errors: errs.slice(0, 10) };
 }

@@ -1,3 +1,4 @@
+import { seoulToday } from "../../shared/dates.ts";
 // [5] 수집 상태값과 경고 문구 일치(모의 공공 API)
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -24,7 +25,7 @@ test("[5-재현] 주변 시군구가 상한(6곳)을 넘으면 상태도 ‘일�
   assert.equal(rd.status, "partial");
   assert.match(collectionStatusText(res.report), /주변 행정구역 탐색: 일부/);
   assert.match(rd.note, /경계 전체를 보장하지 않음/);
-  const w = emptyWorking("주소", "2026-10-31");
+  const w = emptyWorking("주소", res.report.at.slice(0,10));
   applyLookup(w, res, "2026-11-18T14:00:00+09:00");
   const flags = runAnalysis(w).flags.map((f) => f.text).join("\n");
   assert.match(flags, /주변 행정구역 탐색 일부/);

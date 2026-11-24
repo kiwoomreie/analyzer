@@ -132,9 +132,9 @@ test("[모의 응답] 한 달 수집 실패·지점 조회 실패 → partial, �
 
 test("[모의 응답] 국토부 여러 페이지 수집과 전체 건수 대사, 중간 페이지 실패·건수 불일치 검출", async () => {
   const cfg = { serviceKey: "k", endpoint: "https://apis.data.go.kr/x", maxMonths: 12 };
-  const page = (n: number, total: number) => `<response><header><resultCode>000</resultCode></header><body><items>${Array.from({ length: n }, (_, i) => item("P", "동", String(i), 1, "11110")).join("")}</items><totalCount>${total}</totalCount></body></response>`;
+  const page = (n: number, total: number, pageNo = 1) => `<response><header><resultCode>000</resultCode></header><body><items>${Array.from({ length: n }, (_, i) => item("P", "동", String(i), 1, "11110")).join("")}</items><pageNo>${pageNo}</pageNo><totalCount>${total}</totalCount></body></response>`;
   const lookupOk = (_h: string, cb: any) => cb(null, [{ address: "203.0.113.10", family: 4 }]);
-  const ok = await fetchMolitMonth(cfg, "11110", "202609", { lookup: lookupOk, transport: async (u) => ({ status: 200, headers: {}, body: Buffer.from(page(u.searchParams.get("pageNo") === "3" ? 1 : 2, 5)) }) }, 2);
+  const ok = await fetchMolitMonth(cfg, "11110", "202609", { lookup: lookupOk, transport: async (u) => ({ status: 200, headers: {}, body: Buffer.from(page(u.searchParams.get("pageNo") === "3" ? 1 : 2, 5, Number(u.searchParams.get("pageNo")))) }) }, 2);
   assert.equal(ok.pagesExpected, 3);
   assert.equal(ok.pagesFetched, 3);
   assert.equal(ok.collected, 5);
@@ -251,4 +251,17 @@ test("만료 정리: 미소비 시동 자료·임시 분석 삭제", () => {
   app.db.prepare("UPDATE temp_analyses SET expires_at = 0").run();
   const r = app.runCleanup();
   assert.ok(r.pending > 0 && r.temp > 0);
+});
+
+test('[모의 응답] 같은 전체 건수의 다른 페이지 재전송 및 해석 불가 원천행은 대사 실패',async()=>{
+  const cfg={serviceKey:'mock',endpoint:'https://apis.data.go.kr/x',maxMonths:1};
+  const lookupOk=(_h:string,cb:any)=>cb(null,[{address:'203.0.113.10',family:4}]);
+  for (const malformed of [false,true]){
+    const r=await fetchMolitMonth(cfg,'11110','202609',{lookup:lookupOk,transport:async()=>{
+      const source=item('모의','가상동','1',1,'11110');
+      return {status:200,headers:{},body:Buffer.from(`<response><resultCode>000</resultCode><pageNo>1</pageNo><numOfRows>1</numOfRows><totalCount>2</totalCount><items>${malformed?source.replace('84.97','?'):source}</items></response>`)};
+    }},1);
+    assert.equal(r.ok,false);
+    assert.match(r.error!,malformed?/필수값 누락/:/페이지 번호/);
+  }
 });

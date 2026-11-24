@@ -7,7 +7,7 @@ import { createServer, type Server } from "node:http";
 import { readFileSync, writeFileSync } from "node:fs";
 import { chromium, type Browser, type Page } from "playwright";
 import { observeGroups } from "../../shared/observation.ts";
-import { fmtMan, fmtPp } from "../../shared/units.ts";
+import { fmtExclusivePyeong, fmtMan, fmtPp } from "../../shared/units.ts";
 import { fmtChange } from "../../shared/priceView.ts";
 import { openSec, reveal, stepAware } from "../helpers/stepAware.ts";
 
@@ -44,6 +44,8 @@ for (const [vp, size] of [["pc", { width: 1440, height: 900 }], ["m390", { width
 
     await open(page, "sec-input");
     await page.fill("[data-testid=f-area]", "84");
+    await page.locator("#sec-input [data-testid=coord-input]").fill("37.412, 127.126");
+    await page.locator("#sec-input [data-testid=coord-input]").press("Tab");
     await open(page, "sec-market");
     assert.equal(await page.isDisabled("[data-testid=public-lookup]"), true, "키 없으면 자동 조회 비활성");
     await page.setInputFiles("[data-testid=csv-import]", CSV);
@@ -57,6 +59,11 @@ for (const [vp, size] of [["pc", { width: 1440, height: 900 }], ["m390", { width
     await panel.locator("[data-testid=obs-event]").selectOption({ label: "[가상] 가람선 누리역 신설" });
     await panel.locator("[data-testid=obs-milestone]").selectOption({ label: "고시 · 2024-02-20" });
     await panel.locator("[data-testid=obs-months]").selectOption("12");
+    for (const row of await panel.locator("[data-testid=obs-groups] tbody tr").all()) {
+      await row.locator("details > summary").click();
+      await row.locator("input[placeholder]").fill("37.413, 127.127");
+      await row.locator("input[placeholder]").press("Tab");
+    }
     for (const n of ["[가상]가람마을 1단지", "[가상]가람마을 2단지", "[가상]누리숲 아파트"]) await panel.getByRole("checkbox", { name: `${n} 영향권`, exact: true }).check();
     for (const n of ["[가상]동편마을 A", "[가상]은빛마을"]) await panel.getByRole("checkbox", { name: `${n} 비교군`, exact: true }).check();
     assert.match(await panel.locator("[data-testid=obs-run-status]").innerText(), /그룹 관측이 없습니다|다릅니다/);
@@ -77,7 +84,7 @@ for (const [vp, size] of [["pc", { width: 1440, height: 900 }], ["m390", { width
     const sumText = await page.locator("[data-testid=obs-summary]").textContent();
     assert.ok(sum.includes(`영향권 ${fmtChange(g.impact.changePct)}`), `영향권 변동률 ${fmtChange(g.impact.changePct)}`);
     assert.ok(sum.includes(`비교군 ${fmtChange(g.control.changePct)}`));
-    assert.ok(sum.includes(`${fmtMan(g.impact.pre.medianPerM2)}→${fmtMan(g.impact.post.medianPerM2)}`));
+    assert.ok(sum.includes(`${fmtExclusivePyeong(g.impact.pre.medianPerM2)} → ${fmtExclusivePyeong(g.impact.post.medianPerM2)}`));
     assert.ok(sum.includes(`전 ${g.impact.pre.count}건·후 ${g.impact.post.count}건`));
     if (g.valid) assert.match(sum, new RegExp(`비교군 대비 관측 차이 ${fmtPp(g.differencePp).replace("+", "\\+")}`));
     else assert.match(sum, /차이를 표시하지 않습니다/);

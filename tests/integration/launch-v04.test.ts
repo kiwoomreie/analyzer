@@ -1,3 +1,4 @@
+import { seoulToday } from "../../shared/dates.ts";
 // v0.3 독립 검토 지적 3·4: auto-launch 경로 일관성, 수집 상태 분리(모의 요청·모의 공공 API)
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
@@ -29,6 +30,7 @@ async function launch(): Promise<any> {
     return r;
   };
   const doc = JSON.parse(readFileSync("examples/launch-fixtures/valid-full.json", "utf8"));
+  doc.asOf = seoulToday();
   doc.launchId = `fixture-auto-${Math.random().toString(36).slice(2, 10)}`;
   const r1 = await go("/launch", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ payload: JSON.stringify(doc) }).toString() });
   const r2 = await go(r1.headers.get("location")!);
@@ -52,7 +54,7 @@ test("[지적3] auto-launch도 일반 분석과 같은 경로: 반경 시군구 
 });
 
 test("[지적3] auto-launch 수집이 일부 실패하면 그대로 기록되고 불확실성에 반영", async () => {
-  mockState.failYm = "202610";
+  mockState.failYm = seoulToday().slice(0,7).replace("-","");
   const rec = await launch();
   mockState.failYm = "";
   assert.notEqual(rec.working.collections[0].trades.status, "complete");

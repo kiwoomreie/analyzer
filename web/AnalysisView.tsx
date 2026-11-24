@@ -12,7 +12,7 @@ import { LABELS } from "../shared/contract.ts";
 import { currentPriceView, observationView, priceInputOf } from "../shared/priceView.ts";
 import { DATA_MODE_LABEL, migrateRecord, newKey, ORIGIN_LABEL, titleFor, type AnalysisRecord, type WorkingInputs } from "../shared/model.ts";
 import { makeBackup, scanWorking } from "../shared/importers.ts";
-import { seoulNowIso, seoulToday } from "../shared/dates.ts";
+import { parseDateValue, seoulNowIso, seoulToday } from "../shared/dates.ts";
 import { fmtMan, fmtNum } from "../shared/units.ts";
 import { InputSection } from "./sections/InputSection.tsx";
 import { EventsSection } from "./sections/EventsSection.tsx";
@@ -160,7 +160,15 @@ export function AnalysisView({ storage, recKey, session }: { storage: StorageKin
   const props: SectionProps = { rec, getRec: () => recRef.current, update, setRec, session };
   const w0 = rec.working;
   const rp = w0.reviewPrice;
-  const runNow = () => setRec(withRun(recRef.current ?? rec, "manual"));
+  const runNow = () => {
+    const current = recRef.current ?? rec;
+    if (parseDateValue(current.working.asOf)?.precision !== "day") {
+      setSaveState("분석 기준일에 유효한 YYYY-MM-DD 날짜를 입력하세요.");
+      return false;
+    }
+    setRec(withRun(current,"manual"));
+    return true;
+  };
   const goStep = (n: number, fromHistory = false) => {
     if (n === step) return;
     // 브라우저 ‘뒤로 가기’로 이전 단계에 돌아오도록 단계마다 기록(같은 주소, 상태만 다름). 입력은 기록(rec)에 있어 그대로 남음
@@ -170,8 +178,8 @@ export function AnalysisView({ storage, recKey, session }: { storage: StorageKin
   const closeCite = () => { setCite(null); const t = returnTo.current; requestAnimationFrame(() => { if (t) { window.scrollTo({ top: t.y, behavior: "auto" }); t.el.focus({ preventScroll: true }); t.el.classList.add("cite-back"); setTimeout(() => t.el.classList.remove("cite-back"), 1200); } }); };
   const citeFor = (id: string | null, title: string) => id ? <CiteBtn id={id} onOpen={(el) => openCite(id, el, lastRun, r, title)} /> : null;
   const STEPS = [
-    { n: 1, label: "대상·자료", eyebrow: "01 / DATA", title: "대상과 자료를 정리합니다", sub: "주소 하나로 시작합니다. 전용면적·검토가격·일정은 선택 입력이며, 없으면 그 값이 필요한 비교만 보류합니다.", done: w0.transactions.length > 0 },
-    { n: 2, label: "입지·비교 조건", eyebrow: "02 / CONDITIONS", title: "입지 사건과 비교 조건을 고릅니다", sub: "사건과 실제 기준일, 전후 기간, 영향권·비교군을 직접 확인해 선택합니다. 자동 반경 선정은 하지 않습니다.", done: !!w0.observation?.impact?.length },
+    { n: 1, label: "대상·입지 사건", eyebrow: "01 / DATA", title: "대상과 입지 사건을 입력합니다", sub: "주소·전용면적·분석 기준일을 입력하고, 아래에 입지 사건의 공개일·실제 발생일과 근거를 기록하세요.", done: !!(w0.property.address && w0.property.exclusiveAreaM2 && w0.events.length) },
+    { n: 2, label: "비교단지·실거래", eyebrow: "02 / CONDITIONS", title: "사건 전후의 실거래를 비교합니다", sub: "비교할 날짜와 기간을 선택하고 실거래를 조회하세요. 사용할 단지와 표본을 확인한 뒤 분석을 실행하세요.", done: !!w0.observation?.impact?.length },
     { n: 3, label: "분석 결과", eyebrow: "03 / RESULT", title: "결과와 근거를 함께 봅니다", sub: "요약 세 가지를 먼저 보고, [실거래]·[입지] 근거를 열어 확인한 뒤 읽던 곳으로 돌아옵니다.", done: !stale },
     { n: 4, label: "보고서·저장", eyebrow: "04 / REPORT", title: "실행본을 저장하고 보고서로 남깁니다", sub: "분석 실행 시점의 입력·근거·결과를 함께 남기며, 이후 입력 변경이 지난 결과를 덮어쓰지 않습니다.", done: storage === "browser-local" },
   ];
@@ -236,12 +244,11 @@ export function AnalysisView({ storage, recKey, session }: { storage: StorageKin
             <span className="chip">금액 만원(원 단위 계산) · 면적 전용㎡ · 1평=400/121㎡</span>
           </div>
           <InputSection {...props} defaultOpen />
-          <MarketSection {...props} part="data" />
+          <EventsSection {...props} defaultOpen />
         </div>
 
         <div className="step-panel" data-step="2" hidden={step !== 2}>
-          <EventsSection {...props} defaultOpen />
-          <div className="card"><ObservationPanel rec={rec} update={update} /></div>
+          <div className="card"><ObservationPanel rec={rec} update={update}><MarketSection {...props} part="data" /></ObservationPanel></div>
         </div>
 
         <div className="step-panel" data-step="3" hidden={step !== 3}>
@@ -254,17 +261,10 @@ export function AnalysisView({ storage, recKey, session }: { storage: StorageKin
         </div>
         <div className="card sblock" data-testid="summary-price">
           <p className="step-eyebrow">02</p><h2>가격 영향과 근거 {stale && <Badge tone="bad">이전 결과</Badge>}</h2>
-          <h3 className="sub-h">현재 검토가격 비교</h3>
-          <dl className="kv" data-testid="price-current">
-            <dt>검토가격</dt><dd>{lr.input.reviewPrice ? <>{pv.review.status === "held" && <Badge tone="muted">보류</Badge>} 세대당 총액 {pv.review.household} · {pv.review.perPyeong}<div className="muted small">{pv.review.perM2} · {pv.review.label} · 기준일 {pv.review.basisDate}{pv.review.note ? ` — ${pv.review.note}` : ""}</div></> : <><Badge tone="muted">미입력</Badge> <span className="small">검토가격이 없어 가격 비교만 보류</span></>}</dd>
-            <dt>인근 유사 거래</dt><dd>{pv.market.complexes ? <>대표 비교단지 {pv.market.complexes}곳(최대 5곳, 부족해도 채우지 않음) · {pv.market.count}건 중위 {pv.market.perPyeong} <span className="cites">{r.market.comparables.map((c) => <span key={c.complexKey}>{citeFor(citationIdForComplex(r, c.complexKey), c.name)}</span>)}</span><div className="muted small">{pv.market.perM2} · 세대당 환산 {pv.market.householdEquiv} · 단지별 중위 범위 {pv.market.range} · {pv.market.window} · {pv.market.area}</div></> : <span className="small">조건에 맞는 대표 비교단지 없음 — 거리 확인·거래 수·면적·준공연도 기준을 충족한 단지가 없어 채우지 않음 <span className="muted">({pv.market.window} · {pv.market.area})</span></span>}</dd>
-            <dt>검토가격 비교</dt><dd data-testid="price-compare">{r.price.status === "held" ? <><Badge tone="muted">보류</Badge> {r.price.text.replace(/^가격 판단 보류 — /, "")}</> : r.price.text}</dd>
-          </dl>
-          <p className="muted small">{pv.disclaimer}</p>
           <h3 className="sub-h">입지 사건 전후 관측 {ov.demo && <Badge tone="bad">가상 자료</Badge>}</h3>
           <div data-testid="obs-summary">
             {!ov.configured ? (
-              <p className="small">영향권·비교군 미설정 — ‘실거래·비교단지 상세’에서 사건·실제 기준일·전후 기간·단지를 선택하고 분석을 다시 실행하십시오.<span className="muted"> 참고(대표 비교단지 발표 전후 단일값): {r.summary.price.observed.replace(/^관찰된 변화: ?/, "")}</span></p>
+              <p className="small">영향권·비교군 미설정 — 2단계 ‘비교단지·실거래’에서 사건·실제 기준일·전후 기간·단지를 선택하고 분석을 다시 실행하십시오.<span className="muted"> 참고(대표 비교단지 발표 전후 단일값): {r.summary.price.observed.replace(/^관찰된 변화: ?/, "")}</span></p>
             ) : (
               <>
                 <p className="small muted">{ov.headline} {citeFor(OBS_CITATION_ID, "수동 확인 그룹 관측")}</p>
@@ -275,6 +275,13 @@ export function AnalysisView({ storage, recKey, session }: { storage: StorageKin
               </>
             )}
           </div>
+          <h3 className="sub-h">현재 검토가격 비교</h3>
+          <dl className="kv" data-testid="price-current">
+            <dt>검토가격</dt><dd>{lr.input.reviewPrice ? <>{pv.review.status === "held" && <Badge tone="muted">보류</Badge>} 세대당 총액 {pv.review.household} · {pv.review.perPyeong}<div className="muted small">{pv.review.perM2} · {pv.review.label} · 기준일 {pv.review.basisDate}{pv.review.note ? ` — ${pv.review.note}` : ""}</div></> : <><Badge tone="muted">미입력</Badge> <span className="small">검토가격이 없어 가격 비교만 보류</span></>}</dd>
+            <dt>인근 유사 거래</dt><dd>{pv.market.complexes ? <>대표 비교단지 {pv.market.complexes}곳(최대 5곳, 부족해도 채우지 않음) · {pv.market.count}건 중위 {pv.market.perPyeong} <span className="cites">{r.market.comparables.map((c) => <span key={c.complexKey}>{citeFor(citationIdForComplex(r, c.complexKey), c.name)}</span>)}</span><div className="muted small">{pv.market.perM2} · 세대당 환산 {pv.market.householdEquiv} · 단지별 중위 범위 {pv.market.range} · {pv.market.window} · {pv.market.area}</div></> : <span className="small">조건에 맞는 대표 비교단지 없음 — 거리 확인·거래 수·면적·준공연도 기준을 충족한 단지가 없어 채우지 않음 <span className="muted">({pv.market.window} · {pv.market.area})</span></span>}</dd>
+            <dt>검토가격 비교</dt><dd data-testid="price-compare">{r.price.status === "held" ? <><Badge tone="muted">보류</Badge> {r.price.text.replace(/^가격 판단 보류 — /, "")}</> : r.price.text}</dd>
+          </dl>
+          <p className="muted small">{pv.disclaimer}</p>
           <dl className="kv">
             <dt>선반영</dt><dd>{r.summary.price.prepricing}</dd>
             <dt>인과 추정 효과</dt><dd><Badge tone="muted">미추정</Badge></dd>
@@ -291,7 +298,7 @@ export function AnalysisView({ storage, recKey, session }: { storage: StorageKin
 
       <div className="card" data-testid="comparables">
         <h2>대표 비교단지 {stale && <Badge tone="bad">이전 결과</Badge>} <span className="muted small">최대 5개 · 비교하기 어려운 단지는 채우지 않음 · 최근 {r.market.recentWindow.months}개월({r.market.recentWindow.start}~{r.market.recentWindow.end}){r.market.areaFilter ? ` · 전용 ${fmtNum(r.market.areaFilter.minM2, 1)}~${fmtNum(r.market.areaFilter.maxM2, 1)}㎡` : " · 면적 필터 없음"}</span></h2>
-        {!r.market.comparables.length ? <p className="muted" data-testid="no-comparables">반경 내 거리가 확인된 비교 가능 단지 없음{lr.input.transactions.length ? " — 제외·확인 필요 사유는 ‘실거래·비교단지 상세’에서 확인" : " — 실거래 자료 없음"}</p> : (
+        {!r.market.comparables.length ? <p className="muted" data-testid="no-comparables">반경 내 거리가 확인된 비교 가능 단지 없음{lr.input.transactions.length ? " — 제외·확인 필요 사유는 2단계 ‘비교단지·실거래’에서 확인" : " — 실거래 자료 없음"}</p> : (
           <table className="tbl">
             <thead><tr><th>근거</th><th>단지</th><th>준공연도(본건 대비)</th><th>거리</th><th>최근 거래</th><th>거래 전용면적</th><th>중위 단가(만원/전용㎡)</th><th>최근 계약</th><th>선정 이유</th><th>자료</th></tr></thead>
             <tbody>{r.market.comparables.map((c) => (
@@ -338,8 +345,8 @@ export function AnalysisView({ storage, recKey, session }: { storage: StorageKin
         <nav className="step-nav" aria-label="단계 이동">
           {step > 1 ? <button className="ghost" onClick={() => goStep(step - 1)} data-testid="step-prev">← 이전 단계</button> : <span />}
           <span className="step-count" data-testid="step-count">{String(step).padStart(2, "0")} / 04</span>
-          {step === 1 && <button className="navy" onClick={() => goStep(2)} data-testid="step-next">입지·비교 조건으로 →</button>}
-          {step === 2 && <button className="navy" onClick={() => { runNow(); goStep(3); }} data-testid="step-next">분석 실행하고 결과 보기 →</button>}
+          {step === 1 && <button className="navy" onClick={() => goStep(2)} data-testid="step-next">비교단지·실거래로 →</button>}
+          {step === 2 && <button className="navy" onClick={() => { if (runNow()) goStep(3); }} data-testid="step-next">분석 실행하고 결과 보기 →</button>}
           {step === 3 && <button className="navy" onClick={() => goStep(4)} data-testid="step-next">보고서·저장으로 →</button>}
           {step === 4 && <button className="navy" onClick={() => goStep(3)} data-testid="step-next">결과로 돌아가기 ←</button>}
         </nav>

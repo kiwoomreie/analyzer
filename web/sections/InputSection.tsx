@@ -41,7 +41,7 @@ export function InputSection({ rec, update, defaultOpen }: SectionProps) {
     <Section id="sec-input" defaultOpen={defaultOpen} title="입력·세부 설정" summary={`${w.property.address} · 전용 ${w.property.exclusiveAreaM2 ? `${w.property.exclusiveAreaM2}㎡` : "미입력"} · 검토가격 ${rp ? `${rp.amount}${LABELS.moneyUnit[rp.unit]}` : "미입력"}`}>
       <h4>대상</h4>
       <div className="form grid">
-        <Text label="주소" value={w.property.address} onChange={(v) => update((x) => { x.property.address = v ?? ""; })} wide testId="f-address" />
+        <Text label="주소" value={w.property.address} onChange={(v) => update((x) => { if (x.property.address !== v) { delete x.property.coordinates; delete x.property.lawdCode; } x.property.address = v ?? ""; })} wide testId="f-address" />
         <Text label="표시명(선택)" value={w.property.displayName} onChange={(v) => update((x) => { x.property.displayName = v; })} />
         <CoordField value={w.property.coordinates} hint={w.property.coordinates ? `출처: ${w.property.coordinates.source}` : undefined} onChange={(c) => update((x) => { x.property.coordinates = c ? { ...c, source: "사용자 입력" } : undefined; })} />
         <Num label="전용면적(비교 타입)" suffix="㎡" value={w.property.exclusiveAreaM2} onChange={(v) => update((x) => { x.property.exclusiveAreaM2 = v; })} testId="f-area" hint={r.property.exclusivePyeong ? `${fmtNum(r.property.exclusivePyeong)}전용평` : "없으면 가격 판단 보류"} />

@@ -1,3 +1,4 @@
+import { availableBy, evidenceDate, milestoneKnownOn } from "./asOf.ts";
 // 실행본 인용 근거: 결과 카드의 [실거래-01]·[입지-01]·[관측-01] 버튼이 가리키는 거래·단지·사건을
 // 그 실행 시점 값으로 별도 보존한다. 이후 입력(거래 수정·삭제, 단지명 변경)으로 다시 채우지 않는다.
 import type { AnalysisResult } from "./analysis.ts";
@@ -48,13 +49,13 @@ export function buildCitations(input: WorkingInputs, r: AnalysisResult, at: stri
     const ev = input.events.find((x) => x.key === e.key);
     const docKeys = new Set([...(ev?.evidenceKeys ?? []), ...(ev?.milestones ?? []).flatMap((m) => m.evidenceKeys ?? [])]);
     const docs: Evidence[] = (input.evidence ?? []).filter((d) => docKeys.has(d.key) || (d.linked ?? []).includes(e.key));
-    const documents: CitedDocument[] = docs.map((d) => {
+    const documents: CitedDocument[] = docs.filter(d => availableBy(evidenceDate(d),input.asOf)).map((d) => {
       const pub = parseDateValue(d.publishedOn ?? null);
       return {
         key: d.key, title: d.title, publisher: d.publisher, sourceType: d.sourceType ? EVIDENCE_SOURCE_LABEL[d.sourceType] : "미기재", sourceRef: d.sourceRef, sourceUrl: d.sourceUrl,
         publishedOn: d.publishedOn, effectiveOn: d.effectiveOn, checkedOn: d.checkedOn, pageOrSection: d.pageOrSection,
         fact: d.fact, status: EVIDENCE_STATUS_LABEL[d.status], level: EVIDENCE_LEVEL_LABEL[evidenceLevel(d)], originalReviewed: !!d.originalReviewed, dataMode: d.dataMode,
-        milestones: (ev?.milestones ?? []).filter((m) => (m.evidenceKeys ?? []).includes(d.key)).map((m) => `${MILESTONE_LABEL[m.type] ?? m.type} ${m.date ?? "날짜 미기재"}`),
+        milestones: (ev?.milestones ?? []).filter((m) => availableBy(milestoneKnownOn(m,input.evidence),input.asOf) && (m.evidenceKeys ?? []).includes(d.key)).map((m) => `${MILESTONE_LABEL[m.type] ?? m.type} ${m.date ?? "날짜 미기재"}`),
         afterAsOf: !!(pub && asOf && isBefore(asOf, pub) === true),
       };
     });

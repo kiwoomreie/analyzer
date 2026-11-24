@@ -5,7 +5,7 @@ import type { AppConfig } from "./config.ts";
 import { fetchMolitMonth, geocodeComplex, geocodeKakao, OutboundBlocked, regionsAround, type RegionInfo, type SafeFetchDeps } from "./publicData.ts";
 import { HttpError } from "./http.ts";
 import { complexKeyOf, type CollectionReport, type Transaction } from "../shared/model.ts";
-import { seoulNowIso } from "../shared/dates.ts";
+import { parseDateValue, seoulNowIso } from "../shared/dates.ts";
 import type { LookupPayload } from "../shared/applyData.ts";
 
 export const LIMITS = { regions: 6, complexes: 80 };
@@ -25,7 +25,9 @@ export async function collectPublicData(cfg: AppConfig, body: any, pd?: SafeFetc
   const notes: string[] = [];
   const address = typeof body?.address === "string" ? body.address.slice(0, 200) : "";
   const asOf = typeof body?.asOf === "string" && /^\d{4}-\d{2}-\d{2}$/.test(body.asOf) ? body.asOf : null;
-  if (!address || !asOf) throw new HttpError(400, "INPUT", "address·asOf 필요");
+  if (!address || !asOf || !parseDateValue(asOf)) throw new HttpError(400, "INPUT", "address·asOf 필요");
+  const through = body?.through ?? asOf;
+  if (typeof through !== "string" || parseDateValue(through)?.precision !== "day" || through > asOf) throw new HttpError(400,"INPUT","조회 종료일 확인 필요");
   const radiusM = Math.min(Math.max(Number(body?.radiusM) || 1500, 100), 5000);
   const months = Math.min(Math.max(Number(body?.months) || 12, 1), cfg.molit.maxMonths);
   if ((Number(body?.months) || 12) > cfg.molit.maxMonths) notes.push(`요청 ${Number(body?.months)}개월 중 ${months}개월만 수집(상한)`);
@@ -64,7 +66,7 @@ export async function collectPublicData(cfg: AppConfig, body: any, pd?: SafeFetc
 
   // 3) 거래 응답 수집·건수 대사
   const monthResults: Awaited<ReturnType<typeof fetchMolitMonth>>[] = [];
-  if (cfg.molit.serviceKey && regions.length) for (const rg of regions) for (const ym of recentMonths(asOf, months)) monthResults.push(await fetchMolitMonth(cfg.molit, rg.code, ym, pd));
+  if (cfg.molit.serviceKey && regions.length) for (const rg of regions) for (const ym of recentMonths(through, months)) monthResults.push(await fetchMolitMonth(cfg.molit, rg.code, ym, pd));
   const trades = monthResults.flatMap((m) => m.items);
   const monthsOk = monthResults.filter((m) => m.ok).length;
   const pageCapped = monthResults.some((m) => (m.error ?? "").includes("상한"));

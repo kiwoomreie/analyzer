@@ -76,7 +76,7 @@ test("[4] 단위·기준일·출처 정보 제공, 상시 안내(notes)와 상�
 
 test("[5] 같은 사건의 다른 일정이 관찰기간에 있으면 경고(관찰기간 밖이면 경고 없음)", () => {
   const w = fixture();
-  w.events[0].milestones.push({ key: "ms2", type: "constructionStart", status: "actual", date: "2025-09-01", evidenceKeys: [] } as any);
+  w.events[0].milestones.push({ key: "ms2", type: "constructionStart", status: "actual", date: "2025-09-01", announcedOn:"2025-09-01", evidenceKeys: [] } as any);
   assert.match(observeGroups(w).warnings.join(" "), /같은 사건의 다른 일정이 관찰기간에 있습니다\(착공 2025-09-01\)/);
   w.events[0].milestones[1].date = "2024-01-01";
   assert.doesNotMatch(observeGroups(w).warnings.join(" "), /같은 사건의 다른 일정/);

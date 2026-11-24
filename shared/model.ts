@@ -8,7 +8,7 @@ import { seoulNowIso, seoulToday } from "./dates.ts";
 
 export const ANALYSIS_FORMAT = "location-analyzer-analysis" as const;
 export const ANALYSIS_FORMAT_VERSION = 1 as const;
-export const ENGINE_VERSION = "0.2.0";
+export const ENGINE_VERSION = "0.3.0";
 export const APP_NAME = "아파트 입지·가격 분석기";
 
 /** demo=가상, user=사용자 제공, official-api=공식 API 실제 자료, committee-copy=협의체가 보낸 가정 사본(수신 대기 중) */
@@ -186,6 +186,8 @@ export interface Transaction {
   priceKrw: number;
   /** 계약일 YYYY-MM-DD 또는 YYYY-MM */
   contractDate: string;
+  /** 원천 자료가 공개되었거나 실제로 확인된 날짜 */
+  knownOn?: string;
   cancelled: boolean;
   cancelDate?: string;
   buildYear?: number;

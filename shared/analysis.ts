@@ -1,6 +1,8 @@
 // 아파트 입지·가격 분석 엔진(순수 함수). 화면·보고서가 같은 결과를 사용한다.
 // 원칙: 확인된 사실 / 관찰된 변화 / 비교 차이 / 미추정을 구분하고, 자료가 없으면 적정가격·상승률을 만들지 않는다.
 import { addMonths, compareMonth, formatDateValue, isBefore, monthDiff, parseDateValue, type DateParts } from "./dates.ts";
+import { availableBy, eventKnownOn, evidenceDate, milestoneKnownOn, tradeAvailable, transactionAsOf } from "./asOf.ts";
+import { observeGroups, validObservationLocation } from "./observation.ts";
 import { hashOf } from "./hash.ts";
 import {
   complexKeyOf, DATA_MODE_LABEL, ENGINE_VERSION, EVENT_CATEGORY_LABEL, EVIDENCE_LEVEL_LABEL, MILESTONE_LABEL, SUPPLY_STAGE_LABEL,
@@ -169,14 +171,6 @@ export function haversineM(a: { lat: number; lng: number }, b: { lat: number; ln
 const monthKey = (p: DateParts) => `${p.y}-${String(p.m).padStart(2, "0")}`;
 const sortKey = (p: DateParts | null) => (p ? p.y * 400 + p.m * 32 + (p.d ?? 0) : -1);
 
-function knownAsOf(m: Milestone, asOf: DateParts): boolean | "undated" {
-  const k = parseDateValue(m.announcedOn ?? null) ?? parseDateValue(m.collectedOn ?? null);
-  if (!k) return "undated";
-  const b = isBefore(k, asOf);
-  if (b === null) return compareMonth(k, asOf) <= 0;
-  return b || (compareMonth(k, asOf) === 0 && k.precision === "day" && asOf.precision === "day" && k.d === asOf.d);
-}
-
 function mode<T>(arr: T[]): T | null {
   const m = new Map<T, number>();
   arr.forEach((x) => m.set(x, (m.get(x) ?? 0) + 1));
@@ -199,11 +193,7 @@ function laterThan(dateRaw: string | undefined, asOf: DateParts): boolean {
 
 /** 사건이 처음 알려진 날(일정의 발표일·수집일, 연결 근거의 발행일 중 가장 이른 날) */
 export function firstKnownOf(ev: LocationEvent, evidence: Evidence[]): DateParts | null {
-  const ds = [
-    ...ev.milestones.map((m) => parseDateValue(m.announcedOn ?? m.collectedOn ?? null)),
-    ...evidence.filter((e) => ev.evidenceKeys.includes(e.key)).map((e) => parseDateValue(e.publishedOn ?? null)),
-  ].filter(Boolean) as DateParts[];
-  return ds.sort((a, b) => sortKey(a) - sortKey(b))[0] ?? null;
+  return parseDateValue(eventKnownOn(ev, evidence));
 }
 
 // ───────────── main
@@ -221,18 +211,18 @@ export function runAnalysis(w: WorkingInputs): AnalysisResult {
   if (!w.transactions.length) missing.push({ field: "transactions", label: "인근 실거래", affects: "비교단지·시세 수준(공공데이터 키 미설정 시 CSV로 추가)" });
   if (!w.events.length) missing.push({ field: "events", label: "입지 사건", affects: "입지 변화 정리" });
 
-  const evByKey = new Map(w.evidence.map((e) => [e.key, e]));
+  
   const excludedEvents: AnalysisResult["excludedEvents"] = [];
   const activeEvents = w.events.filter((ev) => {
     const fk = firstKnownOf(ev, w.evidence);
-    if (fk && isBefore(asOf, fk) === true) { excludedEvents.push({ key: ev.key, name: ev.name, firstKnown: fk.raw }); return false; }
+    if (fk && !availableBy(fk.raw,w.asOf)) { excludedEvents.push({ key: ev.key, name: ev.name, firstKnown: fk.raw }); return false; }
     return true;
   });
   if (excludedEvents.length) flags.push({ level: "low", area: "data", text: `분석 기준일 이후 처음 알려진 사건 ${excludedEvents.length}건은 분석에서 제외: ${excludedEvents.map((e) => e.name).join(", ")}` });
-  const events: EventResult[] = activeEvents.map((ev) => analyzeEvent(ev, w, asOf, coords, evByKey, flags));
+  const events: EventResult[] = activeEvents.map((ev) => analyzeEvent(ev, w, asOf, coords, flags));
   const market = analyzeMarket(w, asOf, area, coords, flags);
   const price = comparePrice(w, area, market, flags);
-  const observed = observeChange(w, asOf, events, market, flags);
+  const observed = observeChange(w, events, market);
 
   // 선반영 가능성
   const priceDate = parseDateValue(w.reviewPrice?.basisDate ?? null);
@@ -257,7 +247,8 @@ export function runAnalysis(w: WorkingInputs): AnalysisResult {
   }
 
   const supply = analyzeSupply(w, activeEvents, events, asOf, area, flags);
-  const lastCol = (w.collections ?? [])[0] ? migrateCollection((w.collections ?? [])[0]) : undefined;
+  const lastReport = w.collections?.find(c => availableBy(c.at?.slice(0,10),w.asOf));
+  const lastCol = lastReport ? migrateCollection(lastReport) : undefined;
   if (lastCol) {
     const tr = lastCol.trades, rd = lastCol.regionDiscovery, gc = lastCol.complexGeocode;
     if (tr.status === "partial" || tr.status === "failed") flags.push({ level: "high", area: "data", text: `최근 거래 응답 수집·건수 대사 미완료(월 ${tr.monthsOk}/${tr.monthsTotal}${tr.capped ? ", 페이지 상한" : ""}) — 일부 거래 누락 가능: 단지별 표본·중위 단가와 대표 비교단지 선정이 달라질 수 있음` });
@@ -314,10 +305,11 @@ export function runAnalysis(w: WorkingInputs): AnalysisResult {
   };
 }
 
-function analyzeEvent(ev: LocationEvent, w: WorkingInputs, asOf: DateParts, coords: { lat: number; lng: number } | null, evByKey: Map<string, WorkingInputs["evidence"][number]>, flags: Flag[]): EventResult {
+function analyzeEvent(ev: LocationEvent, w: WorkingInputs, asOf: DateParts, coords: { lat: number; lng: number } | null, flags: Flag[]): EventResult {
   const timeline = ev.milestones.map((m) => {
-    const k = knownAsOf(m, asOf);
-    return { key: m.key, type: MILESTONE_LABEL[m.type], status: m.status === "actual" ? "실제" : "예정", date: m.date ?? "미입력", announcedOn: m.announcedOn ?? "미입력", collectedOn: m.collectedOn ?? "미입력", knownAsOf: k !== false, note: m.note, _m: m, _u: k === "undated" };
+    const date = milestoneKnownOn(m, w.evidence);
+    const k = availableBy(date, w.asOf) && (m.status !== "actual" || !laterThan(m.date, asOf));
+    return { key: m.key, type: MILESTONE_LABEL[m.type], status: m.status === "actual" ? "실제" : "예정", date: m.date ?? "미입력", announcedOn: m.announcedOn ?? "미입력", collectedOn: m.collectedOn ?? "미입력", knownAsOf: k, note: m.note, _m: m, _u: !date };
   });
   const known = timeline.filter((t) => t.knownAsOf).map((t) => t._m);
   const excludedAfterAsOf = timeline.filter((t) => !t.knownAsOf).length;
@@ -362,8 +354,9 @@ function analyzeEvent(ev: LocationEvent, w: WorkingInputs, asOf: DateParts, coor
     ev.category === "supply" ? null : walk === null ? "보행 경로 자료 없음 — 보행시간 미산출" : `보행 ${walk}분(${ev.access?.routeSource ?? "출처 미기재"})`,
   ].filter(Boolean).join(" · ");
 
-  const linked = ev.evidenceKeys.map((k) => evByKey.get(k)).filter(Boolean) as WorkingInputs["evidence"];
-  const evs = linked.filter((e) => !laterThan(e.publishedOn, asOf));
+  const docKeys = new Set([...ev.evidenceKeys,...known.flatMap(m => m.evidenceKeys)]);
+  const linked = w.evidence.filter(e => docKeys.has(e.key) || e.linked?.includes(ev.key));
+  const evs = linked.filter((e) => availableBy(evidenceDate(e),w.asOf));
   const afterAsOf = linked.length - evs.length;
   const byStatus = { confirmed: 0, needsApplicability: 0, inconsistent: 0, hardToVerify: 0 } as Record<EvidenceStatus, number>;
   const levels = { userInput: 0, sourceCited: 0, originalChecked: 0 } as Record<EvidenceLevel, number>;
@@ -377,7 +370,7 @@ function analyzeEvent(ev: LocationEvent, w: WorkingInputs, asOf: DateParts, coor
   return {
     key: ev.key, name: ev.name, category: ev.category, categoryLabel: EVENT_CATEGORY_LABEL[ev.category], direction: ev.direction, dataMode: ev.dataMode,
     stageAsOf, cancelled, announcement, initialTarget, expectedTarget, expectedTargetStatus, delayCount,
-    timeline: timeline.map(({ _m, _u, ...t }) => t), excludedAfterAsOf, undatedKnowledge, scheduleGaps,
+    timeline: timeline.filter(t => t.knownAsOf).map(({ _m, _u, ...t }) => t), excludedAfterAsOf, undatedKnowledge, scheduleGaps,
     access: { straightDistanceM: straight, walkMinutes: walk, text: accessText },
     evidence: { total: evs.length, byStatus, levels, originalChecked, afterAsOf, text: evText }, prepricing: null,
   };
@@ -392,22 +385,26 @@ function analyzeMarket(w: WorkingInputs, asOf: DateParts, area: number | null, c
   const infoByKey = new Map(w.complexInfo.map((c) => [c.complexKey, c]));
 
   // 같은 ID 사본·충돌
-  const diag = diagnoseTrades(w.transactions);
+  const transactions = w.transactions.map(t => transactionAsOf(t,w.asOf));
+  const available = transactions.filter(t => tradeAvailable(t,w.asOf));
+  const diag = diagnoseTrades(available);
   const shadowKeys = new Set(diag.identicalGroups.flatMap((g) => g.keys.slice(1)));
   const conflictKeys = new Set([...diag.conflictGroups.flatMap((g) => g.keys), ...w.transactions.filter((t) => t.reviewFlag?.kind === "idConflict").map((t) => t.key)]);
   // 동조건 묶음에서 해제 대상 특정 불가 + 사용자 제외가 섞인 묶음 → 유효 표본 확정 불가
   // 저장된 {size,cancelled} 값이 아니라 현재 묶음 구성(거래 수·해제 수)으로 판단 — 오래된 표시(전량 해제 후 잔존)나
   // 표시가 빠진 새 합류 거래(v0.5.1 저장분)도 올바르게 처리. 입력 기록은 바꾸지 않는다.
-  const ambGroups = new Map<string, Transaction[]>([...liveCancelAmbiguity(w.transactions)].map(([k, v]) => [k, v.members]));
+  const ambGroups = new Map<string, Transaction[]>([...liveCancelAmbiguity(available)].map(([k, v]) => [k, v.members]));
   const uncertainKeys = new Set<string>();
   for (const members of ambGroups.values()) if (new Set(members.map((m) => m.manualExclusion ?? "")).size > 1) members.forEach((m) => uncertainKeys.add(m.key));
   const baseReasonsByKey = new Map<string, string[]>();
 
-  const txRows = w.transactions.map((t: Transaction) => {
+  const txRows = transactions.map((t: Transaction) => {
     const reasons: string[] = [];
     const d = parseDateValue(t.contractDate);
     const uncertain = uncertainKeys.has(t.key);
     if (t.cancelled && !uncertain) reasons.push("해제(취소) 거래");
+    if (!tradeAvailable(t,w.asOf)) reasons.push("분석 기준일 당시 공개 미확인");
+    if (t.reviewFlag && !conflictKeys.has(t.key)) reasons.push("원천 정정 확인 필요");
     if (!d) reasons.push("계약일 형식 오류");
     else {
       if (isBefore(asOf, d) === true) reasons.push("분석 기준일 이후 계약");
@@ -423,10 +420,10 @@ function analyzeMarket(w: WorkingInputs, asOf: DateParts, area: number | null, c
     reasons.forEach((r) => { const k = r.startsWith("사용자 제외") ? "사용자 제외" : r; excludedTrades[k] = (excludedTrades[k] ?? 0) + 1; });
     return { key: t.key, complexKey: complexKeyOf(t), included: false, reasons, perM2: t.exclusiveAreaM2 > 0 && t.priceKrw > 0 ? t.priceKrw / t.exclusiveAreaM2 : null };
   });
-  const validTrades = w.transactions.filter((t) => !t.cancelled && t.exclusiveAreaM2 > 0 && t.priceKrw > 0 && parseDateValue(t.contractDate)).length;
+  const validTrades = available.filter((t) => !t.cancelled && t.exclusiveAreaM2 > 0 && t.priceKrw > 0 && parseDateValue(t.contractDate)).length;
 
   const groups = new Map<string, Transaction[]>();
-  w.transactions.forEach((t) => { const k = complexKeyOf(t); groups.set(k, [...(groups.get(k) ?? []), t]); });
+  transactions.forEach((t) => { const k = complexKeyOf(t); groups.set(k, [...(groups.get(k) ?? []), t]); });
   const rowByKey = new Map(txRows.map((r) => [r.key, r]));
   const complexes: ComplexResult[] = [];
   const nameCount = new Map<string, number>();
@@ -434,11 +431,11 @@ function analyzeMarket(w: WorkingInputs, asOf: DateParts, area: number | null, c
   for (const [ck, txs] of groups) {
     const info = infoByKey.get(ck);
     const ok = txs.filter((t) => rowByKey.get(t.key)!.reasons.length === 0);
-    const by = info?.buildYear ?? mode(txs.map((t) => t.buildYear).filter((x): x is number => !!x));
+    const by = info?.buildYear ?? mode(txs.filter(t => tradeAvailable(t,w.asOf)).map((t) => t.buildYear).filter((x): x is number => !!x));
     const loc = info?.location;
     let dist: number | null = null, distSrc = "없음";
-    if (info?.distanceM !== undefined) { dist = info.distanceM; distSrc = info.distanceSource ?? "사용자 입력 거리"; }
-    else if (coords && loc) { dist = haversineM(coords, loc); distSrc = `좌표 간 직선거리(단지 좌표: ${info?.locationSource ?? "출처 미기재"})`; }
+    if (info?.distanceM !== undefined && (!txs.some(t => t.dataMode === "official-api") || validObservationLocation(loc))) { dist = info.distanceM; distSrc = info.distanceSource ?? "사용자 입력 거리"; }
+    else if (coords && loc && validObservationLocation(coords) && validObservationLocation(loc)) { dist = haversineM(coords, loc); distSrc = `좌표 간 직선거리(단지 좌표: ${info?.locationSource ?? "출처 미기재"})`; }
     const stats = computeStats(ok.map((t) => ({ perM2: t.priceKrw / t.exclusiveAreaM2, complex: ck })));
     const dates = ok.map((t) => t.contractDate).sort();
     const reasons: string[] = [];
@@ -510,9 +507,9 @@ function analyzeMarket(w: WorkingInputs, asOf: DateParts, area: number | null, c
   if (shadowKeys.size) flags.push({ level: "medium", area: "data", text: `저장된 같은 ID·같은 내용 사본 ${shadowKeys.size}건 — 통계는 1건으로 계산, ‘거래 진단’에서 정리 가능` });
   if (conflictKeys.size) flags.push({ level: "high", area: "data", text: `거래 ID 충돌 ${conflictKeys.size}건(같은 출처·ID에 다른 내용·지역·단지) — 통계 제외, 원본 확인 필요` });
   const held = w.transactions.filter((t) => t.reviewFlag?.kind === "idChangeUnconfirmed").length;
-  if (held) flags.push({ level: "medium", area: "data", text: `출처 미지정 거래 ID의 값 변경 ${held}건 — 자동 반영 보류(기존 값으로 집계), 확인 필요` });
+  if (held) flags.push({ level: "medium", area: "data", text: `출처 미지정 거래 ID의 값 변경 ${held}건 — 자동 반영 보류(통계 제외), 확인 필요` });
 
-  if (w.transactions.length && !comparables.length) flags.push({ level: "high", area: "price", text: "비교 가능한 단지 없음(거래 표본·면적·거리·준공연도 기준 미충족)" });
+  if (w.transactions.length && !comparables.length) flags.push({ level: "high", area: "price", text: `현재 가격 비교용으로 비교 가능한 단지 없음(최근 ${o.recentMonths}개월 거래·면적·거리·준공연도 조건)` });
   else if (comparables.length && comparables.length < 3) flags.push({ level: "medium", area: "price", text: `비교 가능한 단지 ${comparables.length}개뿐 — 비교 범위 제한` });
   if (!coords && w.transactions.length) flags.push({ level: "high", area: "price", text: "본건 좌표 없음 — 거리를 확인할 수 없어 반경 내 대표 비교단지를 선정하지 못함(사용자가 거리를 입력한 단지만 가능)" });
   if (needsCheck.length) flags.push({ level: "medium", area: "price", text: `거리 미확인 단지 ${needsCheck.length}곳 — 확인 필요 후보로 분리, 대표 통계에서 제외` });
@@ -524,16 +521,14 @@ function analyzeMarket(w: WorkingInputs, asOf: DateParts, area: number | null, c
   if (bigYear.length) flags.push({ level: "medium", area: "price", text: `비교단지와 연식 차이 5년 이상: ${bigYear.map((c) => c.name).join(", ")} — 신축·구축 차이 해석 필요` });
   if (pooled.count > 0 && pooled.count < o.minSample) flags.push({ level: "high", area: "price", text: `비교 거래 표본 ${pooled.count}건(기준 ${o.minSample}건 미만)` });
   if (!area && w.transactions.length) flags.push({ level: "medium", area: "price", text: "전용면적 미입력 — 모든 면적 거래를 ㎡당으로 비교(면적대 차이 미반영)" });
-  const txMap = new Map(w.transactions.map((t) => [t.key, t]));
-  const pc = w.transactions.filter((t) => t.reviewFlag?.kind === "possibleCorrection" && !t.cancelled && !t.manualExclusion);
-  const pcInPool = txRows.filter((r) => r.included && txMap.get(r.key)?.reviewFlag?.kind === "possibleCorrection").length;
-  if (pc.length) flags.push({ level: pcInPool ? "high" : "medium", area: "price", text: `금액만 다른 같은 조건 거래 ${pc.length}건 — 별도 거래 또는 정정 여부 확인 필요(원천 정정 정보 없음, 둘 다 집계 중${pcInPool ? `; 대표 비교 표본에 ${pcInPool}건 포함 — 표본 수·중위 단가 확정 아님` : ""})` });
+  const pc = w.transactions.filter(t => t.reviewFlag?.kind === "possibleCorrection" && !t.cancelled && !t.manualExclusion);
+  if (pc.length) flags.push({level:"medium",area:"price",text:`금액만 다른 같은 조건 거래 ${pc.length}건 — 별도 거래 또는 정정 여부 확인 필요(통계 제외)`});
   const v03 = w.transactions.filter((t) => t.idBasis !== "official" && !t.officialId && (t.revisions ?? []).some((r) => r.change.startsWith("정정: 거래금액")));
   if (v03.length) flags.push({ level: "medium", area: "price", text: `v0.3에서 금액 차이만으로 자동 정정된 거래 ${v03.length}건 — 원래 거래가 별도 거래였을 수 있음(이력 보존), 확인 필요` });
 
   return {
     recentWindow: { start: start.raw, end: asOfMonth.raw, months: o.recentMonths }, areaFilter: band, complexes, comparables, needsCheck, pooled, sampleRange, excludedTrades, validTrades, txRows,
-    dataModes: [...new Set(w.transactions.map((t) => t.dataMode))], sources: [...new Set(w.transactions.map((t) => t.source ?? DATA_MODE_LABEL[t.dataMode]))].slice(0, 5),
+    dataModes: [...new Set(available.map((t) => t.dataMode))], sources: [...new Set(available.map((t) => t.source ?? DATA_MODE_LABEL[t.dataMode]))].slice(0, 5),
   };
 }
 
@@ -544,6 +539,7 @@ function comparePrice(w: WorkingInputs, area: number | null, market: MarketResul
   const krw = toKrw(rp.amount, rp.unit);
   const reviewText = `${rp.label ?? "검토가격"} ${rp.amount.toLocaleString("ko-KR")}${LABELS.moneyUnit[rp.unit]}(${LABELS.priceBasis[rp.basis]})`;
   const basisDate = rp.basisDate ?? "기준일 미입력";
+  if (rp.basisDate && laterThan(rp.basisDate,parseDateValue(w.asOf)!)) return {...base,status:"held",reason:"분석 기준일 이후 검토가격",reviewText,basisDate,text:"가격 판단 보류 — 분석 기준일 이후 검토가격"};
   if (!rp.basisDate) flags.push({ level: "low", area: "price", text: "검토가격 기준일 미입력" });
   if (krw === null) return { ...base, status: "held", reason: "금액 환산 불가", reviewText, basisDate, text: "가격 판단 보류 — 금액 환산 불가" };
   const u = deriveUnitPrices(krw, rp.basis, area, null);
@@ -562,37 +558,19 @@ function comparePrice(w: WorkingInputs, area: number | null, market: MarketResul
   };
 }
 
-function observeChange(w: WorkingInputs, asOf: DateParts, events: EventResult[], market: MarketResult, flags: Flag[]): ObservedChange {
+function observeChange(w: WorkingInputs, events: EventResult[], market: MarketResult): ObservedChange {
   const o = w.options;
-  const anchorEv = events.find((e) => e.key === o.anchorEventKey && e.announcement) ?? events.find((e) => e.category !== "supply" && e.announcement);
-  const empty = computeStats([]);
-  if (!anchorEv) return { status: "notComputed", anchor: "-", window: "-", pre: empty, post: empty, changePct: null, text: "관찰된 변화: 발표일이 확인된 입지 사건이 없어 전후 비교 안 함" };
-  const a = anchorEv.announcement!;
-  const am: DateParts = { raw: monthKey(a), precision: "month", y: a.y, m: a.m };
-  const start = addMonths(am, -o.comparisonMonthsBefore);
-  let end = addMonths(am, o.comparisonMonthsAfter);
-  if (compareMonth(end, asOf) > 0) end = { raw: monthKey(asOf), precision: "month", y: asOf.y, m: asOf.m };
-  const sel = new Set(market.comparables.map((c) => c.complexKey));
-  const band = market.areaFilter;
-  const rows = w.transactions.filter((t) => sel.has(complexKeyOf(t)) && !t.cancelled && !t.manualExclusion && t.exclusiveAreaM2 > 0 && t.priceKrw > 0 && (!band || (t.exclusiveAreaM2 >= band.minM2 && t.exclusiveAreaM2 <= band.maxM2)));
-  const pre: { perM2: number; complex: string }[] = [], post: { perM2: number; complex: string }[] = [];
-  rows.forEach((t) => {
-    const d = parseDateValue(t.contractDate);
-    if (!d || compareMonth(d, start) < 0 || compareMonth(d, end) > 0 || isBefore(asOf, d) === true) return;
-    const c = compareMonth(d, am);
-    if (c < 0) pre.push({ perM2: t.priceKrw / t.exclusiveAreaM2, complex: complexKeyOf(t) });
-    else if (c > 0) post.push({ perM2: t.priceKrw / t.exclusiveAreaM2, complex: complexKeyOf(t) });
-  });
-  const ps = computeStats(pre), qs = computeStats(post);
-  const window = `${start.raw}~${end.raw}(발표월 제외)`;
-  const firstMonth = rows.map((t) => t.contractDate).sort()[0];
-  if (rows.length && (!firstMonth || firstMonth.slice(0, 7) > start.raw)) flags.push({ level: "medium", area: "data", text: `사건 전 비교기간(${start.raw}부터) 중 거래 자료가 ${firstMonth?.slice(0, 7) ?? "없음"}부터만 있음 — 기간 부족, 빈 기간을 채우지 않음` });
-  if (ps.count < o.minSample || qs.count < o.minSample) {
-    flags.push({ level: "medium", area: "price", text: `${anchorEv.name} 전후 거래 표본 부족(전 ${ps.count}건·후 ${qs.count}건, 기준 ${o.minSample}건) — 관찰 변화 미산출` });
-    return { status: "notComputed", anchor: `${anchorEv.name} 발표 ${formatDateValue(a)}`, window, pre: ps, post: qs, changePct: null, text: `관찰된 변화: 표본 부족으로 미산출(전 ${ps.count}건·후 ${qs.count}건)` };
-  }
-  const changePct = (qs.medianPerM2! / ps.medianPerM2! - 1) * 100;
-  return { status: "computed", anchor: `${anchorEv.name} 발표 ${formatDateValue(a)}`, window, pre: ps, post: qs, changePct, text: `관찰된 변화: ${anchorEv.name} 발표 전후 대표 비교단지 중위 단가 ${changePct > 0 ? "+" : ""}${changePct.toFixed(1)}%(전 ${ps.count}건·후 ${qs.count}건). 시장 전반 변화가 섞여 있어 입지 효과로 볼 수 없음.` };
+  const event = o.anchorEventKey ? events.find(e => e.key === o.anchorEventKey)
+    : events.find(e => e.announcement) ?? events.find(e => e.timeline.length > 0);
+  const g = observeGroups({...w, observation: {eventKey:event?.key, anchorBasis:'known', months:6,
+    impact:market.comparables.map(c => c.complexKey),control:[]}}, {before:o.comparisonMonthsBefore, after:o.comparisonMonthsAfter});
+  const {pre,post,changePct} = g.impact;
+  const anchor = g.anchor ? `${g.anchorLabel} ${g.anchor}` : '사건 공개일 미확인';
+  const window = g.start ? `전 [${g.start}, ${g.anchor}) · 후 [${g.anchor}, ${g.end}) · 반경 ${o.radiusM}m` : '기간 미확인';
+  const reason = g.warnings.filter(t => !t.startsWith('비교군')).join(' · ');
+  const text = changePct === null ? `관찰된 변화: 미산출 · ${reason || '유효한 비교 거래 없음'}` :
+    `관찰된 변화: ${anchor} 전후 대표 비교단지 중위 단가 ${fmtPct(changePct)}(전 ${pre.count}건·후 ${post.count}건). 시장 전반 변화가 포함된 관측값입니다.`;
+  return { status:changePct === null ? 'notComputed' : 'computed', anchor, window, pre, post, changePct, text };
 }
 
 function analyzeSupply(w: WorkingInputs, activeEvents: LocationEvent[], eventResults: EventResult[], asOf: DateParts, area: number | null, flags: Flag[]): AnalysisResult["supply"] {

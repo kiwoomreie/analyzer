@@ -17,11 +17,11 @@ export async function mockTransport(u: URL) {
   if (u.hostname === "dapi.kakao.com") {
     const q = u.searchParams.get("query") ?? "";
     if (q.includes("없는지번") || (mockState.failGeocode && q.includes("번지"))) return json({ documents: [] });
-    return json({ documents: [{ x: "127.126", y: q.includes("2번지") ? "37.4125" : "37.412", address: { b_code: "4113510900" } }] });
+    return json({ documents: [{ x: "127.126", y: q.includes("2번지") ? "37.4125" : "37.412", address: { b_code: q.includes("신흥동") ? "4113310100" : "4113510900" } }] });
   }
   const ym = u.searchParams.get("DEAL_YMD")!, lawd = u.searchParams.get("LAWD_CD")!;
   if (ym === mockState.failYm) return { status: 500, headers: {}, body: Buffer.alloc(0) };
   const items = lawd === "41135" ? [item("시험단지", "정자동", "1번지", 3, lawd), item("시험단지", "정자동", "1번지", 3, lawd)] : [item("경계밖단지", "신흥동", "2번지", 5, lawd)];
-  return { status: 200, headers: {}, body: Buffer.from(`<response><header><resultCode>000</resultCode></header><body><items>${items.join("")}</items><numOfRows>1000</numOfRows><pageNo>1</pageNo><totalCount>${items.length}</totalCount></body></response>`) };
+  return { status: 200, headers: {}, body: Buffer.from(`<response><header><resultCode>000</resultCode></header><body><items>${items.join("").replaceAll("<dealYear>2026", "<dealYear>"+ym.slice(0,4)).replaceAll("<dealMonth>9", "<dealMonth>"+Number(ym.slice(4)))}</items><numOfRows>1000</numOfRows><pageNo>1</pageNo><totalCount>${items.length}</totalCount></body></response>`) };
 }
 

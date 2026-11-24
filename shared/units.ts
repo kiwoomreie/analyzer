@@ -121,3 +121,7 @@ export function fmtNum(v: number | null | undefined, digits = 2): string {
   if (v === null || v === undefined || !Number.isFinite(v)) return "미산출";
   return v.toLocaleString("ko-KR", { maximumFractionDigits: digits });
 }
+
+export function fmtExclusivePyeong(perM2: number | null) {
+  return perM2 === null ? "미산출" : fmtMan(perM2 * M2_PER_PYEONG);
+}

@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 import type { AnalysisResult } from "../shared/analysis.ts";
 import type { RunRecord } from "../shared/model.ts";
 import { findCitation, type Citation } from "../shared/citations.ts";
+import { OBSERVATION_EVIDENCE_LIMIT, type ObservationTrade } from "../shared/observation.ts";
 import { fmtMan, fmtNum } from "../shared/units.ts";
 
 export interface CiteTarget { id: string; run: RunRecord; result: AnalysisResult; fallbackTitle: string }
@@ -37,14 +38,14 @@ export function EvidenceDrawer({ target, onClose }: { target: CiteTarget | null;
         </div>
         {!c ? (
           <div className="banner warn" data-testid="evidence-missing">당시 근거 상세 미보존 — 이 실행본(#{target.run.runNo}, {target.run.at.slice(0, 16).replace("T", " ")})은 근거 상세 보존 기능 이전에 만들어졌습니다. 현재 입력으로 다시 채우지 않습니다.</div>
-        ) : <CitationBody c={c} />}
+        ) : <CitationBody c={c} trades={target.result.groupObservation?.tradeEvidence} />}
         <p className="small muted">이 내용은 실행 #{target.run.runNo}에 보존된 값입니다. 이후 거래·사건을 수정하거나 삭제해도 바뀌지 않습니다.</p>
       </div>
     </div>
   );
 }
 
-function CitationBody({ c }: { c: Citation }) {
+function CitationBody({ c, trades }: { c: Citation; trades?: ObservationTrade[] }) {
   if (c.kind === "trade") return (
     <div data-testid="evidence-body">
       <dl className="kv small"><dt>거리</dt><dd>{c.distanceM === null ? "미확인" : `${Math.round(c.distanceM).toLocaleString("ko-KR")}m`}</dd><dt>준공연도</dt><dd>{c.buildYear ?? "미확인"}</dd><dt>중위 단가</dt><dd>{fmtMan(c.medianPerM2)}/전용㎡</dd><dt>사용 거래</dt><dd>{c.tradeTotal}건{c.tradeTotal > c.trades.length ? ` (최근 ${c.trades.length}건 보존)` : ""}</dd></dl>
@@ -83,6 +84,12 @@ function CitationBody({ c }: { c: Citation }) {
       <p className="small">기준 {c.anchor || "미선택"} · 전후 {c.window || "미산출"}</p>
       <div className="table-scroll"><table className="tbl small"><thead><tr><th>그룹</th><th>단지</th><th>사용</th><th>전/후</th><th>이유</th></tr></thead>
         <tbody>{c.usage.map((u, i) => <tr key={i} className={u.used ? "" : "excluded"}><td>{u.group}</td><td>{u.label}</td><td>{u.used ? "사용" : "미사용"}</td><td>{u.pre}/{u.post}</td><td>{u.reason ?? "-"}</td></tr>)}</tbody></table></div>
+      {trades && <details><summary>전후 비교 거래 근거 · {trades.length}건 보존</summary>
+        <p className="small">그룹별 전·후 각각 최근 {OBSERVATION_EVIDENCE_LIMIT}건까지 표시합니다. 전체 사용 건수는 위 표에 있습니다.</p>
+        <div className="table-scroll"><table className="tbl small" data-testid="observed-trade-evidence">
+          <thead><tr><th>그룹</th><th>기간</th><th>단지</th><th>계약일</th><th>전용㎡</th><th>거래금액</th><th>출처</th></tr></thead>
+          <tbody>{trades.map((t,i)=><tr key={i}><td>{t.group === 'impact' ? '영향권' : '비교군'}</td><td>{t.period}</td><td>{t.name}</td><td>{t.date}</td><td>{t.area}</td><td>{fmtMan(t.priceKrw,0)}</td><td>{t.source}</td></tr>)}</tbody>
+        </table></div></details>}
     </div>
   );
 }

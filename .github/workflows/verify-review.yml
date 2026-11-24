@@ -7,7 +7,7 @@ on:
     branches: ["review/**"]
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   verify:
@@ -33,6 +33,16 @@ jobs:
       - name: Function list
         if: always()
         run: ls .vercel/output/functions || true
+      - name: Push screenshots to a results branch (not main)
+        if: always()
+        run: |
+          B=shots/${GITHUB_SHA::7}
+          git config user.name "ci"; git config user.email "ci@users.noreply.github.com"
+          git checkout --orphan "$B"; git rm -rf -q . || true
+          mkdir -p out && cp -r shots/. out/ 2>/dev/null || true; cp e2e.log out/ 2>/dev/null || true
+          cp -r out/. . && rm -rf out shots node_modules
+          git add -A && git commit -q -m "verify results ${GITHUB_SHA}" || true
+          git push -q origin "$B" || true
       - uses: actions/upload-artifact@v4
         if: always()
         with:

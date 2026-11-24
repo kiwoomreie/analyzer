@@ -159,7 +159,7 @@ export function mergeTrades(existing: Transaction[], incomingRaw: Transaction[],
       if (changes.length) {
         const patch: Partial<Transaction> = {};
         CORRECTABLE.forEach(({ f }) => { if (t[f] !== undefined) (patch as any)[f] = t[f]; });
-        next = { ...next, ...patch, revisions: [...(next.revisions ?? []), { at, source, change: `원천 정정(출처 ${scopeOf(t)}·ID 일치): ${changes.join(", ")}` }] };
+        next = { ...next, ...patch, knownOn: t.knownOn || at.slice(0,10), revisions: [...(next.revisions ?? []), { at, source, change: `원천 정정(출처 ${scopeOf(t)}·ID 일치): ${changes.join(", ")}` }] };
       }
       if (cancelNew) next = { ...next, cancelled: true, cancelDate: t.cancelDate ?? next.cancelDate, revisions: [...(next.revisions ?? []), { at, source, change: `해제 반영${t.cancelDate ? `(해제일 ${t.cancelDate})` : ""}${scopeOf(t) === UNSPECIFIED_SCOPE ? " — 출처 미지정이나 지역·단지와 다른 값이 모두 같아 같은 거래로 판단" : ""}` }] };
       current[i] = next;

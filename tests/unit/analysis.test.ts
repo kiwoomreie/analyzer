@@ -63,7 +63,7 @@ test("세대당 검토가격 + 전용면적 없음: 가격 판단 보류(㎡당 
 });
 
 function tx(over: Partial<Transaction>): Transaction {
-  return { key: Math.random().toString(36).slice(2), complexName: "A", exclusiveAreaM2: 84, priceKrw: 900_000_000, contractDate: "2026-09-10", cancelled: false, dataMode: "user", ...over };
+  return { key: Math.random().toString(36).slice(2), complexName: "A", exclusiveAreaM2: 84, priceKrw: 900_000_000, contractDate: "2026-09-10", knownOn: "2026-09-11", cancelled: false, dataMode: "user", ...over };
 }
 
 test("비교거래가 모두 해제: 유효 표본 없음, 평균·중위 0원 표시 금지", () => {

@@ -3,8 +3,8 @@ import type { AnalysisResult, ComplexResult } from "./analysis.ts";
 import { APP_NAME, complexKeyOf, DATA_MODE_LABEL, EVIDENCE_LEVEL_LABEL, EVIDENCE_SOURCE_LABEL, EVIDENCE_STATUS_LABEL, ORIGIN_LABEL, type AnalysisRecord, type WorkingInputs } from "./model.ts";
 import { evidenceLevel } from "./analysis.ts";
 import { hashOf, stableStringify } from "./hash.ts";
-import { fmtMan, fmtNum, fmtPct, fmtPp } from "./units.ts";
-import { reportLabelOf, type ObservationResult } from "./observation.ts";
+import { fmtExclusivePyeong, fmtMan, fmtNum, fmtPct, fmtPp } from "./units.ts";
+import { OBSERVATION_EVIDENCE_LIMIT, reportLabelOf, type ObservationResult } from "./observation.ts";
 import { currentPriceView, observationView } from "./priceView.ts";
 import { contextOf, runOf, type ReportContext } from "./runContext.ts";
 
@@ -61,6 +61,7 @@ export function reportSummary(rec: AnalysisRecord, r: AnalysisResult): string {
   L.push(...comparablesTable(r.market.comparables));
   L.push("", "### 2-2. 입지 사건 전후 관측", ...groupObservationLines(rec, r).map((x, i) => (i === 0 ? x.replace(/^### /, "#### ") : x)),
     `- 참고(대표 비교단지 발표 전후 단일값): ${r.summary.price.observed.replace(/^관찰된 변화: ?/, "")}`,
+    ...(r.engineVersion === "0.3.0" && r.observed.status === "computed" ? [`- ${r.observed.anchor} · ${r.observed.window} · 전용평당 중위 전 ${fmtExclusivePyeong(r.observed.pre.medianPerM2)}(${r.observed.pre.count}건), 후 ${fmtExclusivePyeong(r.observed.post.medianPerM2)}(${r.observed.post.count}건)`] : []),
     `- ${r.summary.price.prepricing}`, `- ${r.summary.price.causal}`, `- 기준: ${r.summary.price.basis}`);
   L.push("", "## 3. 주요 불확실성");
   if (!r.summary.uncertainties.length) L.push("- 자료 범위 내 주요 항목 없음");
@@ -93,6 +94,8 @@ export function groupObservationLines(rec: AnalysisRecord, r: AnalysisResult): s
     "| 그룹 | 단지/면적구간 | 전 표본 | 후 표본 | 전 중위(전용㎡) | 후 중위(전용㎡) | 관측 변동률 |",
     "|---|---|---|---|---|---|---|",
     row("영향권", g.impact), row("비교군", g.control),
+    ...(g.basis.radiusM ? [`- 영향권 반경 ${g.basis.radiusM}m · 처음 알려진 날 ${g.basis.firstKnown ?? "미확인"} · 선택 일정 실제 발생일 ${g.basis.actualDate ?? "미확인"}`,
+      ...([["영향권", g.impact], ["비교군", g.control]] as const).map(([label,x]) => `- ${label} 전용평당 중위가격 · 전 ${fmtExclusivePyeong(x.pre.medianPerM2)} / 후 ${fmtExclusivePyeong(x.post.medianPerM2)}`)] : []),
     "",
     observationView(g).difference ? `- **${observationView(g).difference}** (인과효과 아님 · 관측된 차이)` : "- 비교군 대비 관측 차이: 표시 안 함 — 유효한 비교가 아님(아래 확인 사항 참고)",
     ...g.warnings.map((x) => `- [확인] ${esc(x)}`),
@@ -151,6 +154,11 @@ function appendix(rec: AnalysisRecord, r: AnalysisResult): string {
       else c.documents.forEach((d) => L.push(`  - 문서: 「${esc(d.title || "제목 미기재")}」 · 문서번호 ${esc(d.sourceRef || "미기재")} · ${esc(d.publisher || "발행기관 미기재")} · 발행일 ${d.publishedOn ?? "미기재"} · 페이지·절 ${esc(d.pageOrSection || "미기재")} · ${esc(d.level)} · ${esc(d.status)}${d.milestones.length ? ` · 근거 일정 ${d.milestones.join(", ")}` : ""}${d.afterAsOf ? " · 기준일 이후 문서" : ""}${d.fact ? ` — ${esc(d.fact)}` : ""}`));
     }
     else L.push(`- [${c.id}] ${esc(c.title)} — ${esc(c.summary)} · 사용 단지 ${c.usage.filter((u) => u.used).length}/${c.usage.length}곳`);
+  }
+  if (g?.tradeEvidence?.length) {
+    L.push("", `### H. 전후 비교 거래 근거 (그룹별 전·후 최근 ${OBSERVATION_EVIDENCE_LIMIT}건까지 보존)`, "",
+      "| 그룹 | 기간 | 단지 | 계약일 | 전용㎡ | 세대 거래금액 | 출처 |", "|---|---|---|---|---|---|---|",
+      ...g.tradeEvidence.map(t => `| ${t.group === "impact" ? "영향권" : "비교군"} | ${t.period} | ${esc(t.name)} | ${t.date} | ${t.area} | ${fmtMan(t.priceKrw)} | ${esc(t.source)} |`));
   }
   return L.join("\n");
 }

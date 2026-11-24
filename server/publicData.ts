@@ -1,3 +1,4 @@
+import { seoulToday, parseDateValue } from "../shared/dates.ts";
 // 허용된 공공데이터 어댑터만 외부 호출한다. 임의 URL을 대신 요청하는 범용 프록시·다운로더는 없다.
 // 방어: https만, 고정 호스트 허용목록, 사설·루프백·링크로컬·메타데이터 주소 차단(DNS 결과 검사 후 그 주소로 접속),
 // 리디렉션 거부, 시간·응답 크기 상한.
@@ -72,7 +73,7 @@ function realTransport(u: URL, addr: LookupAddress, timeoutMs: number, maxBytes:
   return new Promise<{ status: number; headers: Record<string, string>; body: Buffer }>((resolve, reject) => {
     const req = httpsRequest(
       {
-        host: u.hostname, servername: u.hostname, path: u.pathname + u.search, method: "GET", port: 443, timeout: timeoutMs,
+        host: u.hostname, servername: u.hostname, path: u.pathname + u.search, method: "GET", port: 443, family: addr.family, timeout: timeoutMs,
         // 검사한 주소로만 접속(DNS 재바인딩 방지)
         lookup: (_h: string, _o: unknown, cb: (e: Error | null, a: string, f: number) => void) => cb(null, addr.address, addr.family),
         headers: { Accept: "application/xml, text/xml, application/json", ...extraHeaders },
@@ -113,13 +114,14 @@ export function parseMolitAptTrades(xml: string, source = "국토교통부 아�
     const y = tag(it, "dealYear"), mo = tag(it, "dealMonth"), d = tag(it, "dealDay");
     if (!(amountMan > 0) || !(area > 0) || !y || !mo) continue;
     const contractDate = `${y}-${mo.padStart(2, "0")}${d ? `-${d.padStart(2, "0")}` : ""}`;
+    if (!parseDateValue(contractDate) || !Number.isFinite(area) || !Number.isSafeInteger(Math.round(amountMan * 1e4)) || !tag(it, "aptNm")) continue;
     const cdeal = (tag(it, "cdealType") ?? "").trim();
     items.push({
       key: newKey("tx"), complexName: (tag(it, "aptNm") ?? "단지명 미상").slice(0, 80),
       complexId: tag(it, "aptSeq")?.slice(0, 40) || undefined, sggCd: tag(it, "sggCd")?.slice(0, 5) || undefined,
       dong: tag(it, "umdNm")?.slice(0, 40) || undefined, jibun: tag(it, "jibun")?.slice(0, 40) || undefined, aptDong: tag(it, "aptDong")?.slice(0, 20) || undefined,
       exclusiveAreaM2: area, floor: Number(tag(it, "floor")) || undefined, priceKrw: Math.round(amountMan * 1e4), contractDate,
-      cancelled: cdeal !== "", cancelDate: tag(it, "cdealDay") || undefined,
+      knownOn: seoulToday(), cancelled: !!tag(it, "cdealDay") || !["", "0", "N"].includes(cdeal.toUpperCase()), cancelDate: tag(it, "cdealDay") || undefined,
       buildYear: Number(tag(it, "buildYear")) || undefined, dataMode: "official-api", source,
     });
   }
@@ -134,7 +136,7 @@ export interface MonthCollection { lawdCode: string; yearMonth: string; totalCou
 export async function fetchMolitMonth(cfg: MolitConfig, lawdCode: string, ym: string, deps: SafeFetchDeps = {}, rows = 1000): Promise<MonthCollection> {
   const out: MonthCollection = { lawdCode, yearMonth: ym, totalCount: null, collected: 0, pagesExpected: null, pagesFetched: 0, ok: false, items: [] };
   const maxPages = cfg.maxPages ?? 20;
-  const source = `국토교통부 아파트 매매 실거래가 API(${new Date().toISOString().slice(0, 10)} 조회)`;
+  const source = `국토교통부 아파트 매매 실거래가 API(${seoulToday()} 조회)`;
   for (let page = 1; page <= (out.pagesExpected ?? 1); page++) {
     if (page > maxPages) { out.error = `페이지 상한(${maxPages}) 초과 — 일부 미수집`; break; }
     const u = new URL(cfg.endpoint);
@@ -147,10 +149,20 @@ export async function fetchMolitMonth(cfg: MolitConfig, lawdCode: string, ym: st
       const r = await safeGet(u.toString(), {}, deps);
       if (r.status !== 200) { out.error = `${page}쪽 응답 ${r.status}`; break; }
       const p = parseMolitAptTrades(r.body.toString("utf8"), source);
-      if (p.resultCode && !/^0+$/.test(p.resultCode)) { out.error = `${page}쪽 결과코드 ${p.resultCode}`; break; }
+      if (!/^0+$/.test(p.resultCode ?? "")) { out.error = `${page}쪽 성공 코드 미확인`; break; }
       if (p.totalCount === null) { out.error = "전체 건수(totalCount) 없음 — 대사 불가"; out.items.push(...p.items); out.pagesFetched++; break; }
+      if (((p.pageNo !== null || p.totalCount > (p.numOfRows || rows)) && p.pageNo !== page) || (page > 1 && out.totalCount !== p.totalCount)) {
+        out.error = `${page}쪽 페이지 번호 또는 전체 건수 불일치`;
+        break;
+      }
+      if (p.items.some(t => t.contractDate.slice(0,7).replace('-','') !== ym || (t.sggCd && t.sggCd !== lawdCode))) {
+        out.error = `${page}쪽 요청 시군구·계약월 불일치`; break;
+      }
+      p.items.forEach(t => { t.sggCd ??= lawdCode; });
+      if (p.items.length !== p.rawItemCount) { out.error = `${page}쪽 거래 필수값 누락 · 건수 대사 불가`; break; }
+      if (p.numOfRows !== null && p.numOfRows < 1) { out.error = "페이지 크기 오류"; break; }
       out.totalCount = p.totalCount;
-      out.pagesExpected = Math.max(1, Math.ceil(p.totalCount / rows));
+      out.pagesExpected = Math.max(1, Math.ceil(p.totalCount / (p.numOfRows || rows)));
       out.items.push(...p.items);
       out.collected += p.rawItemCount;
       out.pagesFetched++;
@@ -175,7 +187,7 @@ export function parseKakaoAddress(json: string): GeocodeResult | null {
   const lng = Number(doc.x), lat = Number(doc.y);
   if (!(lat >= 33 && lat <= 39 && lng >= 124 && lng <= 132)) return null;
   const bcode = String(doc.address?.b_code ?? "");
-  return { lat, lng, lawdCode: /^\d{10}$/.test(bcode) ? bcode.slice(0, 5) : undefined, source: `카카오 로컬 주소검색(${new Date().toISOString().slice(0, 10)})` };
+  return { lat, lng, lawdCode: /^\d{10}$/.test(bcode) ? bcode.slice(0, 5) : undefined, source: `카카오 로컬 주소검색(${seoulToday()})` };
 }
 
 export async function geocodeKakao(restKey: string | null, address: string, deps: SafeFetchDeps = {}): Promise<GeocodeResult | null> {
@@ -224,8 +236,8 @@ export async function regionsAround(restKey: string, center: { lat: number; lng:
 
 /** 단지 지번 주소로 좌표 조회(카카오 주소검색). 실패하면 null — 거리 미확인으로 남긴다. */
 export async function geocodeComplex(restKey: string, region: RegionInfo | undefined, dong?: string, jibun?: string, deps: SafeFetchDeps = {}): Promise<{ lat: number; lng: number; address: string } | null> {
-  if (!region || !dong || !jibun) return null;
+  if (!region?.name2 || !dong || !jibun) return null;
   const address = `${region.name1} ${region.name2} ${dong} ${jibun}`.trim();
   const g = await geocodeKakao(restKey, address, deps);
-  return g ? { lat: g.lat, lng: g.lng, address } : null;
+  return g && g.lawdCode === region.code ? { lat: g.lat, lng: g.lng, address } : null;
 }

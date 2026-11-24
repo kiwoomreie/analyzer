@@ -5,7 +5,7 @@ import type { AnalysisResult } from "./analysis.ts";
 import type { ObservationResult } from "./observation.ts";
 import type { ReviewPrice, WorkingInputs } from "./model.ts";
 import { LABELS } from "./contract.ts";
-import { deriveUnitPrices, fmtEok, fmtMan, fmtNum, fmtPct, fmtPp, M2_PER_PYEONG, toKrw } from "./units.ts";
+import { fmtExclusivePyeong, deriveUnitPrices, fmtEok, fmtMan, fmtNum, fmtPct, fmtPp, M2_PER_PYEONG, toKrw } from "./units.ts";
 
 export interface CurrentPriceView {
   review: { status: "ok" | "held"; label: string; household: string; perPyeong: string; perM2: string; basisDate: string; note?: string };
@@ -81,7 +81,7 @@ export interface ObservationView {
 /** 변동률 표시(+/− 부호 포함) */
 export const fmtChange = (v: number | null) => (v === null ? "미산출" : `${v > 0 ? "+" : ""}${fmtPct(v)}`);
 const groupLine = (name: string, x: ObservationResult["impact"]) =>
-  `${name} ${x.changePct === null ? "변동률 미산출" : fmtChange(x.changePct)} (중위 ${fmtMan(x.pre.medianPerM2)}→${fmtMan(x.post.medianPerM2)}/전용㎡, 전 ${x.pre.count}건·후 ${x.post.count}건, 단지 ${x.complexes}곳)`;
+  `${name} ${x.changePct === null ? "변동률 미산출" : fmtChange(x.changePct)} (전용평당 중위 ${fmtExclusivePyeong(x.pre.medianPerM2)} → ${fmtExclusivePyeong(x.post.medianPerM2)}, 전 ${x.pre.count}건·후 ${x.post.count}건, 단지 ${x.complexes}곳)`;
 
 /** 입지 사건 전후 관측(수동 확인 영향권·비교군). 유효한 비교가 아니면 차이(%p)를 숨긴다. */
 export function observationView(g: ObservationResult | undefined): ObservationView {
@@ -91,7 +91,7 @@ export function observationView(g: ObservationResult | undefined): ObservationVi
   const demo = g.warnings.some((x) => /가상 자료/.test(x)) || g.basis.dataModes.some((x) => /가상/.test(x));
   return {
     configured: true, valid,
-    headline: `${g.anchorLabel || "기준 일정 미선택"} ${g.anchor} · 전후 ${g.start ? `${g.start}~${g.end}` : "미산출"}`,
+    headline: `${g.anchorLabel || "기준 일정 미선택"} ${g.anchor} · 전후 ${g.start ? `${g.start}~${g.end}` : "미산출"}${g.basis.radiusM ? ` · 영향권 반경 ${g.basis.radiusM}m · 최초 공개 ${g.basis.firstKnown ?? "미확인"} · 선택 일정 실제 발생 ${g.basis.actualDate ?? "미확인"}` : ""}`,
     impact: groupLine("영향권", g.impact),
     control: groupLine("비교군", g.control),
     difference: valid && g.differencePp !== null ? `비교군 대비 관측 차이 ${fmtPp(g.differencePp)}` : null,

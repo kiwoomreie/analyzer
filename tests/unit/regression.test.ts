@@ -20,7 +20,7 @@ const report = (o: Partial<CollectionReport> = {}): CollectionReport => ({
   regions: [], regionNote: "", months: [], notes: [], ...o,
 });
 let seq = 0;
-const tx = (o: Partial<Transaction>): Transaction => ({ key: `t${++seq}`, complexName: "A", exclusiveAreaM2: 84, floor: 5, priceKrw: 900_000_000, contractDate: "2026-09-10", cancelled: false, dataMode: "official-api", ...o });
+const tx = (o: Partial<Transaction>): Transaction => ({ key: `t${++seq}`, complexName: "A", exclusiveAreaM2: 84, floor: 5, priceKrw: 900_000_000, contractDate: "2026-09-10", cancelled: false, dataMode: "official-api", knownOn:"2026-10-01", ...o });
 
 function located(): WorkingInputs {
   const w = emptyWorking("주소", "2026-10-31");
@@ -82,6 +82,7 @@ test("[1] 원천 거래 식별자가 있으면 우선 사용(값이 바뀌면 �
 
 test("[1] 공공 API 수집 결과가 부분 실패면 ‘누락 가능’ 불확실성 표시", () => {
   const w = located();
+  w.asOf=AT.slice(0,10);
   applyLookup(w, { geocode: null, trades: [tx({})], complexes: [], report: report({ status: "partial", trades: { status: "partial", monthsOk: 0, monthsTotal: 1, capped: false, note: "" }, months: [{ lawdCode: "11110", yearMonth: "202609", totalCount: 1200, collected: 1000, pagesExpected: 2, pagesFetched: 1, ok: false, error: "2쪽 호출 실패" }] }) }, AT);
   const r = runAnalysis(w);
   assert.ok(r.flags.some((f) => f.level === "high" && f.text.includes("미완료")));
@@ -129,7 +130,7 @@ test("[3] 거리 미확인 단지는 ‘확인 필요 후보’로 분리하고 
 test("[3] 본건 좌표가 없으면 사용자 입력 거리 단지만 선정, 반경 밖 단지는 ‘포함’ 지정해도 제외", () => {
   const w = emptyWorking("주소", "2026-10-31");
   w.property.exclusiveAreaM2 = 84;
-  w.transactions = [1, 2, 3].flatMap((i) => [tx({ complexName: "B", contractDate: `2026-0${i + 5}-10` }), tx({ complexName: "C", contractDate: `2026-0${i + 5}-10` }), tx({ complexName: "D", contractDate: `2026-0${i + 5}-10` })]);
+  w.transactions = [1, 2, 3].flatMap((i) => [tx({ dataMode:"user", complexName: "B", contractDate: `2026-0${i + 5}-10` }), tx({ dataMode:"user", complexName: "C", contractDate: `2026-0${i + 5}-10` }), tx({ complexName: "D", contractDate: `2026-0${i + 5}-10` })]);
   w.complexInfo = [
     { complexKey: complexKeyOf({ complexName: "B" }), distanceM: 700, distanceSource: "사용자 입력 거리" },
     { complexKey: complexKeyOf({ complexName: "C" }), distanceM: 9000, userDecision: "include" },
