@@ -1,0 +1,268 @@
+
+> location-analyzer@0.8.3 test:e2e
+> npm run build:vercel && node --import tsx --test --test-concurrency=2 tests/e2e/*.test.ts
+
+
+> location-analyzer@0.8.3 build:vercel
+> node --import tsx scripts/build-vercel.ts
+
+build ok → dist/web, dist/harness, dist/preview/index.html
+vercel build ok → .vercel/output
+TAP version 13
+# (node:3254) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: 독립 사용: 주소 → 분석 → CSV·사건·거리 입력 → 재실행 → 저장 → 재열기(입력 보존) → 보고서
+ok 1 - 독립 사용: 주소 → 분석 → CSV·사건·거리 입력 → 재실행 → 저장 → 재열기(입력 보존) → 보고서
+  ---
+  duration_ms: 4108.528661
+  type: 'test'
+  ...
+# Subtest: [2] 전체 삭제·재가져오기·재분석 반복: 화면이 깨지지 않고 ‘이전 결과·재분석 필요’ 표시, 중복 집계 없음
+ok 2 - [2] 전체 삭제·재가져오기·재분석 반복: 화면이 깨지지 않고 ‘이전 결과·재분석 필요’ 표시, 중복 집계 없음
+  ---
+  duration_ms: 2818.771021
+  type: 'test'
+  ...
+# Subtest: [모의 응답] 자동 조회 2회: 두 번째는 신규 0·중복 전량, 부분 실패 시 누락 가능 표시
+ok 3 - [모의 응답] 자동 조회 2회: 두 번째는 신규 0·중복 전량, 부분 실패 시 누락 가능 표시
+  ---
+  duration_ms: 1205.177433
+  type: 'test'
+  ...
+# Subtest: [5] 저장소 차단: 성공으로 처리하지 않고 오류와 JSON 내보내기 대안 표시
+ok 4 - [5] 저장소 차단: 성공으로 처리하지 않고 오류와 JSON 내보내기 대안 표시
+  ---
+  duration_ms: 1759.02846
+  type: 'test'
+  ...
+# Subtest: 모바일 화면(390×844): 가로 넘침 없이 요약·대표 비교단지 표시
+ok 5 - 모바일 화면(390×844): 가로 넘침 없이 요약·대표 비교단지 표시
+  ---
+  duration_ms: 968.18208
+  type: 'test'
+  ...
+# Subtest: [대기 기능] 하네스 버튼 1회 → 새 탭(opener null) → 자동 분석 1회, 원본 저장·협의체 요청 0건
+ok 6 - [대기 기능] 하네스 버튼 1회 → 새 탭(opener null) → 자동 분석 1회, 원본 저장·협의체 요청 0건
+  ---
+  duration_ms: 507.044252
+  type: 'test'
+  ...
+# (node:3255) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: [3-재현] 조회 응답을 기다리는 동안 바꾼 검토가격·제외 사유를 오래된 사본으로 덮어쓰지 않음
+ok 7 - [3-재현] 조회 응답을 기다리는 동안 바꾼 검토가격·제외 사유를 오래된 사본으로 덮어쓰지 않음
+  ---
+  duration_ms: 5828.828127
+  type: 'test'
+  ...
+# Subtest: [3] 조회 중 주소를 바꾸면 이전 주소의 응답은 적용 보류(충돌 안내), 연속 조회도 중복 없이 동작
+ok 8 - [3] 조회 중 주소를 바꾸면 이전 주소의 응답은 적용 보류(충돌 안내), 연속 조회도 중복 없이 동작
+  ---
+  duration_ms: 4722.074798
+  type: 'test'
+  ...
+# Subtest: [1] 저장 원문 손상: 첫 화면 경고·원문 내보내기, 새 저장은 차단되고 원문 유지(브라우저)
+ok 9 - [1] 저장 원문 손상: 첫 화면 경고·원문 내보내기, 새 저장은 차단되고 원문 유지(브라우저)
+  ---
+  duration_ms: 1965.49309
+  type: 'test'
+  ...
+# Subtest: [1] 일부 기록 손상: 정상 기록은 열리고 저장 후에도 손상 기록 원문 유지(브라우저)
+ok 10 - [1] 일부 기록 손상: 정상 기록은 열리고 저장 후에도 손상 기록 원문 유지(브라우저)
+  ---
+  duration_ms: 3453.901648
+  type: 'test'
+  ...
+# Subtest: API 키 없을 때 제한 기능을 화면에 표시, 가상 예시로 입력→분석→저장→재열기→보고서
+ok 11 - API 키 없을 때 제한 기능을 화면에 표시, 가상 예시로 입력→분석→저장→재열기→보고서
+  ---
+  duration_ms: 2246.546804
+  type: 'test'
+  ...
+# Subtest: 첫 화면에서 B 조회가 먼저 완료되면 지연된 A 응답으로 다시 열거나 저장하지 않는다
+ok 12 - 첫 화면에서 B 조회가 먼저 완료되면 지연된 A 응답으로 다시 열거나 저장하지 않는다
+  ---
+  duration_ms: 448.237113
+  type: 'test'
+  ...
+# (node:3572) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: 동조건 2건·1건 사용자 제외 → 1건 해제(5~6건) → 전량 해제(범위 표시 사라짐) → 저장·다시 열기·보고서
+ok 13 - 동조건 2건·1건 사용자 제외 → 1건 해제(5~6건) → 전량 해제(범위 표시 사라짐) → 저장·다시 열기·보고서
+  ---
+  duration_ms: 3741.258965
+  type: 'test'
+  ...
+# Subtest: 묶음 증가(2→3건, 해제 1건)는 범위 6~7건, 이후 전량 해제 시 확정
+ok 14 - 묶음 증가(2→3건, 해제 1건)는 범위 6~7건, 이후 전량 해제 시 확정
+  ---
+  duration_ms: 3468.140924
+  type: 'test'
+  ...
+# (node:3737) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: v0.6 수동 비교·기간·그룹 중복·저장 재열기·모바일
+ok 15 - v0.6 수동 비교·기간·그룹 중복·저장 재열기·모바일
+  ---
+  duration_ms: 2474.20395
+  type: 'test'
+  ...
+# (node:3756) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: 기존 전후 관찰 표·새 그룹 패널 공존, 실행 기준 안내, 다시 실행 후 보고서 포함, 단위·내부키
+ok 16 - 기존 전후 관찰 표·새 그룹 패널 공존, 실행 기준 안내, 다시 실행 후 보고서 포함, 단위·내부키
+  ---
+  duration_ms: 1527.407675
+  type: 'test'
+  ...
+# Subtest: 수정 직후 바로 새로고침해도 마지막 수정이 저장됨(자동 저장 대기분 즉시 반영)
+ok 17 - 수정 직후 바로 새로고침해도 마지막 수정이 저장됨(자동 저장 대기분 즉시 반영)
+  ---
+  duration_ms: 1081.772477
+  type: 'test'
+  ...
+# Subtest: 선택했던 단지가 현재 거래에 없으면 ‘현재 거래 없음’ 행·경고 표시, 선택 해제 가능, 삭제 후 다시 저장하지 않음
+ok 18 - 선택했던 단지가 현재 거래에 없으면 ‘현재 거래 없음’ 행·경고 표시, 선택 해제 가능, 삭제 후 다시 저장하지 않음
+  ---
+  duration_ms: 2877.437544
+  type: 'test'
+  ...
+# Subtest: 모바일 390px: 그룹 패널 가로 넘침 없음
+not ok 19 - 모바일 390px: 그룹 패널 가로 넘침 없음
+  ---
+  duration_ms: 587.876216
+  type: 'test'
+  location: '/home/runner/work/analyzer/analyzer/tests/e2e/v061.test.ts:1:6406'
+  failureType: 'testCodeFailure'
+  error: |-
+    가로 넘침 없음 ["SPAN.badge tone-muted#|425|공공데이터·지도 키 미설정 — 자동 조회 불가(CSV·"]
+    
+    35 !== 0
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 35
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/home/runner/work/analyzer/analyzer/tests/e2e/v061.test.ts:120:10)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: 단독 접속(Pages): 외부 요청 없음, 주소→가상 예시→분석→저장→다시 열기→보고서 내려받기(내용 패널 없이), 인쇄 제한 표시 없음
+ok 20 - 단독 접속(Pages): 외부 요청 없음, 주소→가상 예시→분석→저장→다시 열기→보고서 내려받기(내용 패널 없이), 인쇄 제한 표시 없음
+  ---
+  duration_ms: 2477.545434
+  type: 'test'
+  ...
+# Subtest: 다른 화면 안(프레임)에서는 내려받기 내용 패널과 인쇄 제한 표시
+ok 21 - 다른 화면 안(프레임)에서는 내려받기 내용 패널과 인쇄 제한 표시
+  ---
+  duration_ms: 849.470849
+  type: 'test'
+  ...
+# Subtest: [pc] 주소 → CSV → 사건 → 영향권·비교군 → 분석 → 저장·재열기 → 보고서
+ok 22 - [pc] 주소 → CSV → 사건 → 영향권·비교군 → 분석 → 저장·재열기 → 보고서
+  ---
+  duration_ms: 7445.246041
+  type: 'test'
+  ...
+# Subtest: [m390] 주소 → CSV → 사건 → 영향권·비교군 → 분석 → 저장·재열기 → 보고서
+not ok 23 - [m390] 주소 → CSV → 사건 → 영향권·비교군 → 분석 → 저장·재열기 → 보고서
+  ---
+  duration_ms: 6057.963555
+  type: 'test'
+  location: '/home/runner/work/analyzer/analyzer/tests/e2e/v07.test.ts:1:1448'
+  failureType: 'testCodeFailure'
+  error: |-
+    가로 넘침 없음 ["SPAN.badge tone-muted|공공데이터·지도 키 미설정 — 자동 조회 불가(CSV·직접 입력 사용)"]
+    
+    35 !== 0
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 35
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/home/runner/work/analyzer/analyzer/tests/e2e/v07.test.ts:116:12)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: [pc] 주소 → 자료 → 비교군 → 결과 → 근거 열기·복귀 → 저장·재열기 → 보고서, 뒤로 가기
+ok 24 - [pc] 주소 → 자료 → 비교군 → 결과 → 근거 열기·복귀 → 저장·재열기 → 보고서, 뒤로 가기
+  ---
+  duration_ms: 7837.982796
+  type: 'test'
+  ...
+# Subtest: [m390] 주소 → 자료 → 비교군 → 결과 → 근거 열기·복귀 → 저장·재열기 → 보고서, 뒤로 가기
+ok 25 - [m390] 주소 → 자료 → 비교군 → 결과 → 근거 열기·복귀 → 저장·재열기 → 보고서, 뒤로 가기
+  ---
+  duration_ms: 7378.004638
+  type: 'test'
+  ...
+# Subtest: 실행 1 인용은 거래 삭제·재실행·새로고침·JSON 복원 후에도 그대로(브라우저)
+ok 26 - 실행 1 인용은 거래 삭제·재실행·새로고침·JSON 복원 후에도 그대로(브라우저)
+  ---
+  duration_ms: 4100.92862
+  type: 'test'
+  ...
+# Subtest: 과거 저장본(인용 보존 이전)은 근거 버튼을 눌러도 ‘당시 근거 상세 미보존’
+ok 27 - 과거 저장본(인용 보존 이전)은 근거 버튼을 눌러도 ‘당시 근거 상세 미보존’
+  ---
+  duration_ms: 881.497048
+  type: 'test'
+  ...
+# Subtest: 모션 줄이기 설정: 단계·근거 패널 애니메이션 없음, 흐름은 그대로
+ok 28 - 모션 줄이기 설정: 단계·근거 패널 애니메이션 없음, 흐름은 그대로
+  ---
+  duration_ms: 375.350338
+  type: 'test'
+  ...
+# Subtest: [pc] [입지-01] 문서 표시 + 실행 1 보고서는 주소·근거 변경 뒤에도 당시 값
+ok 29 - [pc] [입지-01] 문서 표시 + 실행 1 보고서는 주소·근거 변경 뒤에도 당시 값
+  ---
+  duration_ms: 2451.139819
+  type: 'test'
+  ...
+# Subtest: [m390] [입지-01] 문서 표시 + 실행 1 보고서는 주소·근거 변경 뒤에도 당시 값
+ok 30 - [m390] [입지-01] 문서 표시 + 실행 1 보고서는 주소·근거 변경 뒤에도 당시 값
+  ---
+  duration_ms: 2013.081451
+  type: 'test'
+  ...
+# Subtest: 잘못 저장된 단계에서 복구 후 구버전 실행의 보고서를 보존
+ok 31 - 잘못 저장된 단계에서 복구 후 구버전 실행의 보고서를 보존
+  ---
+  duration_ms: 1565.705885
+  type: 'test'
+  ...
+# (node:4447) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: 가상 사업지 · 모의 API 경계 조회 → 개통 전후 → 저장·재열기·실행 당시 보고서
+ok 32 - 가상 사업지 · 모의 API 경계 조회 → 개통 전후 → 저장·재열기·실행 당시 보고서
+  ---
+  duration_ms: 1712.91577
+  type: 'test'
+  ...
+# Subtest: Vercel 빌드: / → /app, 보안 헤더, /launch 대기, 키가 화면·번들에 없음
+ok 33 - Vercel 빌드: / → /app, 보안 헤더, /launch 대기, 키가 화면·번들에 없음
+  ---
+  duration_ms: 149.016184
+  type: 'test'
+  ...
+# Subtest: 로그인 전에는 자동 조회 비활성, 틀린 비밀번호 안내, 로그인 후 모의 자동 조회로 거래 반영·저장
+ok 34 - 로그인 전에는 자동 조회 비활성, 틀린 비밀번호 안내, 로그인 후 모의 자동 조회로 거래 반영·저장
+  ---
+  duration_ms: 1727.208857
+  type: 'test'
+  ...
+1..34
+# tests 34
+# suites 0
+# pass 32
+# fail 2
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 50860.455099
