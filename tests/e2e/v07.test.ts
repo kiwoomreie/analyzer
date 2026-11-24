@@ -112,7 +112,7 @@ for (const [vp, size] of [["pc", { width: 1440, height: 900 }], ["m390", { width
     await page.waitForSelector("[data-testid=stale-banner]");
     assert.equal(await page.locator("[data-testid=obs-summary]").textContent(), sumText, "요약은 실행본 기준 유지");
     assert.match(await page.locator("[data-testid=report-preview]").innerText(), /실행 #2 입력 기준/);
-    const over = await page.evaluate(() => { const w = innerWidth; return [document.documentElement.scrollWidth - w, [...document.querySelectorAll("body *")].filter((e) => e.getBoundingClientRect().right > w + 1 && !e.parentElement?.closest(".tbl,pre")).slice(0, 6).map((e) => `${e.tagName}.${e.className}|${(e.textContent ?? "").slice(0, 40)}`)]; });
+    const over = await page.evaluate(() => { const w = innerWidth; return [document.documentElement.scrollWidth - w, [...document.querySelectorAll("body *")].filter((e) => e.getBoundingClientRect().right > w + 1 && !e.closest(".stepbar,.tbl,pre,.table-scroll")).slice(0, 12).map((e) => `${e.tagName}.${e.className}|${(e.textContent ?? "").slice(0, 40)}`)]; });
     assert.equal(over[0], 0, `가로 넘침 없음 ${JSON.stringify(over[1])}`);
     await shot(page, `view-${vp}`);
     assert.deepEqual(errors, []);

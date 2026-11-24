@@ -116,7 +116,8 @@ test("모바일 390px: 그룹 패널 가로 넘침 없음", async () => {
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
   const page = stepAware(await ctx.newPage());
   await openSaved(page, withRun(newManualRecord("lc_e4", fixture()), "manual"));
-  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth), 0);
+  const ov = await page.evaluate(() => { const w = innerWidth; return [document.documentElement.scrollWidth - w, [...document.querySelectorAll("body *")].filter((e) => e.getBoundingClientRect().right > w + 1 && !e.closest(".stepbar,.tbl,pre,.table-scroll")).slice(0, 12).map((e) => `${e.tagName}.${e.className}#${e.id}|${Math.round(e.getBoundingClientRect().right)}|${(e.textContent ?? "").slice(0, 30)}`)]; });
+  assert.equal(ov[0], 0, `가로 넘침 없음 ${JSON.stringify(ov[1])}`);
   assert.ok(await page.locator("[data-testid=observation-panel]").isVisible());
   await ctx.close();
 });
