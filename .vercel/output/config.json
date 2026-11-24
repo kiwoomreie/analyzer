@@ -1,0 +1,38 @@
+{
+ "version": 3,
+ "routes": [
+  {
+   "src": "/(.*)",
+   "headers": {
+    "Content-Security-Policy": "default-src 'self'; script-src 'self' https://dapi.kakao.com https://t1.daumcdn.net; style-src 'self'; img-src 'self' data: https://*.daumcdn.net https://*.kakao.com; connect-src 'self'; font-src 'self'; frame-ancestors 'none'; form-action 'self'; base-uri 'none'; object-src 'none'",
+    "Cross-Origin-Opener-Policy": "same-origin",
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "no-referrer",
+    "X-Frame-Options": "DENY",
+    "Permissions-Policy": "geolocation=(), camera=(), microphone=(), payment=()"
+   },
+   "continue": true
+  },
+  {
+   "src": "/",
+   "status": 308,
+   "headers": {
+    "Location": "/app"
+   }
+  },
+  {
+   "src": "/launch(?:/.*)?",
+   "dest": "/api/launch"
+  },
+  {
+   "handle": "filesystem"
+  },
+  {
+   "src": "/app(?:/.*)?",
+   "dest": "/index.html",
+   "headers": {
+    "Cache-Control": "no-store"
+   }
+  }
+ ]
+}
